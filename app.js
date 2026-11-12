@@ -34,7 +34,7 @@ const I = {
 /* ---------- Estado ---------- */
 const KEY = 'pulsosano.v1';
 const DEF = {
-  profile: null, bp: [], done: {}, water: {}, km: {}, dash: {}, wlog: [], adj: 0, run: null, fired: {}, sound: true,
+  profile: null, bp: [], done: {}, water: {}, km: {}, dash: {}, swap: {}, wlog: [], adj: 0, run: null, fired: {}, sound: true,
   rem: {
     ex: { on: true, time: '18:30', days: [1, 2, 3, 4, 5, 6, 0] },
     water: { on: true, from: '08:30', to: '21:00', every: 90 },
@@ -143,6 +143,14 @@ const EX = {
     build: p => [{ label: 'Calentamiento suave', secs: 180, type: 'rest', anim: 'walk' },
       ...Array.from({ length: p.sets }, (_, i) => [{ label: 'Rápido', secs: 180, type: 'work', anim: 'walkfast', sub: `Bloque ${i + 1} de ${p.sets}` }, { label: 'Lento', secs: 180, type: 'rest', anim: 'walkslow', sub: `Bloque ${i + 1} de ${p.sets} · recupera` }]).flat()],
   },
+  indoor: {
+    name: 'Marcha en casa', cat: 'aer', anim: 'march', fx: '−4,5 mmHg', ref: 'edwards', rpe: [4, 6],
+    why: 'Caminar en el sitio cuenta como ejercicio aeróbico igual que salir a andar. Sirve para días de lluvia, calor o falta de tiempo.',
+    steps: ['Marcha en el sitio subiendo las rodillas y moviendo los brazos.', 'Mantén un ritmo en el que puedas hablar pero no cantar (Zona 2).', 'Para variar: pasos laterales, subir y bajar un escalón o caminar por el pasillo.'],
+    safe: 'Calzado deportivo y suelo que no resbale. Ten un apoyo cerca si tu equilibrio es justo.',
+    cues: ['Rodillas arriba, brazos activos', 'Deberías poder hablar', 'Pisa suave', 'Prueba pasos laterales'],
+    build: (p, min) => cardio(min || p.aer, 'march'),
+  },
   bike: {
     name: 'Bicicleta o elíptica', cat: 'aer', anim: 'bike', fx: '−4,5 mmHg', ref: 'edwards', rpe: [4, 6],
     why: 'El mismo beneficio aeróbico sin impacto en rodillas y caderas. Buena opción con sobrepeso o molestias articulares.',
@@ -206,12 +214,18 @@ function cardio(min, anim) {
     { label: 'Ritmo vivo · Zona 2', secs: (min - 2 * w) * 60, type: 'work', anim },
     { label: 'Vuelta a la calma', secs: w * 60, type: 'rest', anim }];
 }
-const SHORT = { wallsit: 'Isométrico pared', grip: 'Isométrico mano', walk: 'Caminata', iwalk: 'Intervalos', bike: 'Bici', strength: 'Fuerza', taichi: 'Tai chi', breath: 'Respiración', stretch: 'Estiramientos' };
-const AER = ['walk', 'iwalk', 'bike'];
+const SHORT = { wallsit: 'Isométrico pared', grip: 'Isométrico mano', walk: 'Caminata', iwalk: 'Intervalos', bike: 'Bici', indoor: 'Marcha en casa', strength: 'Fuerza', taichi: 'Tai chi', breath: 'Respiración', stretch: 'Estiramientos' };
+const AER = ['walk', 'iwalk', 'bike', 'indoor'];
+/* Sustituciones: primero las equivalentes (mismo tipo de estímulo), después las alternativas suaves */
+const ALT = { walk: ['bike', 'indoor', 'iwalk'], bike: ['walk', 'indoor', 'iwalk'], iwalk: ['walk', 'bike', 'indoor'], indoor: ['walk', 'bike', 'iwalk'], wallsit: ['grip', 'walk'], grip: ['wallsit', 'walk'],
+  strength: ['wallsit', 'grip', 'taichi'], taichi: ['stretch', 'breath', 'walk'], breath: ['taichi', 'stretch'], stretch: ['taichi', 'breath'] };
+const sameKind = (a, b) => { const g = c => (c === 'mov' ? 'relax' : c); return g(EX[a].cat) === g(EX[b].cat); };
+const swapNote = (from, to) => sameKind(from, to) ? (to === 'iwalk' ? 'Equivalente: mismo tipo, con bloques rápidos y lentos' : EX[to].cat === 'aer' ? 'Equivalente: mismo tipo y mismos minutos' : 'Equivalente: mismo tipo de ejercicio')
+  : from === 'strength' && EX[to].cat === 'iso' ? 'Parecido: trabaja el músculo de forma estática' : EX[to].cat === 'aer' ? (EX[from].cat === 'iso' ? 'Distinto: suma minutos aeróbicos, no sustituye el isométrico' : 'Distinto: paseo aeróbico suave') : 'Alternativa suave para mantener el hábito';
 const exMin = (id, min, w) => Math.round(EX[id].build(params(w), min).reduce((a, p) => a + p.secs, 0) / 60);
 
 /* Plan semanal: índice = día de la semana (0 domingo) */
-function tasksFor(date = new Date(), w) {
+function tasksFor(date = new Date(), w, raw) {
   if (!S.profile) return [];
   const p = params(w), knee = S.profile.knee, iso = knee ? 'grip' : 'wallsit', aer2 = knee ? 'bike' : 'walk';
   const short = Math.max(10, Math.round(p.aer / 2 / 5) * 5), long = p.aer + 10;
@@ -220,7 +234,13 @@ function tasksFor(date = new Date(), w) {
     1: [[iso], ['walk', short]], 2: [[aer2, p.aer], ['breath']], 3: [[iso], ['strength']], 4: [['bike', p.aer], ['stretch']],
     5: [[iso], ['walk', short]], 6: [sat, ['strength']], 0: [['taichi'], ['walk', Math.max(15, short)], ['stretch']],
   }[date.getDay()];
-  return plan.map(([id, min]) => ({ id, min, total: exMin(id, min, p.w) }));
+  const sw = raw ? {} : (S.swap || {})[dkey(date)] || {};
+  return plan.map(([id, min]) => {
+    const base = { id, min, total: exMin(id, min, p.w) }, to = sw[id];
+    if (!to || !EX[to]) return base;
+    const m = EX[to].cat === 'aer' ? clamp(Math.round(base.total / 5) * 5, 10, 60) : undefined;
+    return { id: to, min: m, total: exMin(to, m, p.w), orig: id };
+  });
 }
 const doneOn = k => S.done[k] || {};
 function setDone(id, minutes, k = dkey()) { (S.done[k] ||= {})[id] = minutes; save(); }
@@ -472,7 +492,7 @@ const ringSVG = (pct, size = 84) => { const r = 36, c = 2 * Math.PI * r; return 
 function taskRow(t, k = dkey()) {
   const done = t.id in doneOn(k), e = EX[t.id];
   return `<div class="task ${done ? 'done' : ''}"><div class="figbox cat-${e.cat}">${fig(e.anim, false)}</div>
-    <div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${t.total} min</span></div>
+    <div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${t.total} min${t.orig ? ` · en lugar de ${SHORT[t.orig].toLowerCase()}` : ''}</span>${done ? '' : `<button class="lnk" data-swap="${t.orig || t.id}">Cambiar ejercicio</button>`}</div>
     ${done ? '' : `<button class="play" data-open="${t.id}" data-min="${t.min || ''}" aria-label="Empezar ${e.name}">${I.play}</button>`}
     <button class="chk ${done ? 'on' : ''}" data-toggle="${t.id}" data-total="${t.total}" aria-label="${done ? 'Desmarcar' : 'Marcar hecho'} ${e.name}" aria-pressed="${done}">${I.check}</button></div>`;
 }
@@ -681,6 +701,17 @@ function openEx(id, min) {
     ${e.gps ? `<label class="row card flat" style="flex-direction:row"><input type="checkbox" class="switch" id="use-gps" checked><span class="grow">Medir recorrido con GPS<br><span class="small muted">Suma los kilómetros a tu día. Mantén la pantalla encendida.</span></span></label>` : ''}
     <button class="btn block" data-start="${id}" data-min="${min || ''}">${I.play} Empezar</button>`);
 }
+function openSwap(orig) {
+  const k = dkey(), today = tasksFor(), cur = today.find(t => (t.orig || t.id) === orig), base = tasksFor(new Date(), undefined, true).find(t => t.id === orig);
+  if (!cur || !base) return;
+  const used = today.filter(t => t !== cur).map(t => t.id), bp = lastBP(), hiBP = bp && (bp.s >= 160 || bp.d >= 100);
+  const opts = [orig, ...ALT[orig]].filter(id => id !== cur.id && !used.includes(id) && !(S.profile.knee && id === 'wallsit') && !(hiBP && EX[id].cat === 'iso' && id !== orig));
+  const row = id => { const e = EX[id], m = EX[id].cat === 'aer' ? clamp(Math.round(base.total / 5) * 5, 10, 60) : undefined, back = id === orig;
+    return `<button class="task" data-swapto="${id}" data-orig="${orig}" style="text-align:left;width:100%"><div class="figbox cat-${e.cat}">${fig(e.anim, false)}</div><div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${back ? base.total : exMin(id, m)} min</span><br><span class="small" style="color:var(--${back || sameKind(orig, id) ? 'good' : 'warn'})">${back ? 'Volver al plan original' : swapNote(orig, id)}</span></div></button>`; };
+  sheet('Cambiar ejercicio', `<p class="muted">Hoy tocaba <b>${EX[orig].name.toLowerCase()}</b> (${base.total} min). Elige con qué sustituirlo; el cambio vale solo para hoy.</p>
+    ${opts.map(row).join('')}
+    <div class="note"><b>Cómo se sustituye.</b> Lo que baja la tensión es el tipo de estímulo y la dosis. Los aeróbicos (caminar, bici, marcha en casa, intervalos) son intercambiables minuto a minuto. Los isométricos se cambian entre sí: pared por mano. La fuerza no tiene un equivalente exacto: lo más parecido es un isométrico, y si no, movimiento suave para no perder el hábito.</div>`);
+}
 function openRefs() {
   sheet('Fuentes', `<div class="card"><p class="small muted">El contenido de la app se apoya en estas publicaciones. Los vídeos enlazados son de terceros y sirven para ver la técnica.</p><div class="list">${Object.values(REF).map(([t, u]) => `<div class="li"><a class="src grow" href="${u}" target="_blank" rel="noopener">${t}</a></div>`).join('')}</div></div>
     <p class="small muted">Orientación general. No sustituye el consejo de tu médico, sobre todo si tomas medicación o tu tensión supera 160/100.</p>`);
@@ -842,6 +873,8 @@ document.addEventListener('click', e => {
   if (d.start) return startEx(d.start, +d.min || undefined, !!$('#use-gps')?.checked);
   if (d.toggle) { const k = dkey(); if (d.toggle in doneOn(k)) { delete S.done[k][d.toggle]; save(); } else { setDone(d.toggle, +d.total); beep(880, .12); buzz(60); } return render(); }
   if (d.range != null) { bpRange = +d.range; return render(); }
+  if (d.swap) return openSwap(d.swap);
+  if (d.swapto) { const k = dkey(); S.swap ||= {}; S.swap = { [k]: S.swap[k] || {} }; if (d.swapto === d.orig) delete S.swap[k][d.orig]; else S.swap[k][d.orig] = d.swapto; save(); closeSheet(); toast(d.swapto === d.orig ? 'Plan original recuperado.' : `Hoy harás ${EX[d.swapto].name.toLowerCase()}.`); return render(); }
   if (d.excat) { exCat = d.excat; return render(); }
   if (d.dweek != null) { dietDay = dietDay % 7 + 7 * +d.dweek; return render(); }
   if (d.srv) { const k = dkey(); (S.dash[k] ||= {})[d.srv] = clamp((S.dash[k][d.srv] || 0) + +d.n, 0, 12); save(); return render(); }

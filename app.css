@@ -324,3 +324,6 @@ table.prog tr.cur td { background: var(--brand-soft); font-weight: 700; }
 .onb .logo { width: 72px; height: 72px; color: var(--pulse); }
 @media (max-width: 350px) { .grid3 { grid-template-columns: 1fr 1fr; } .player .clock { font-size: 3.2rem; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+.lnk { border: 0; background: none; padding: 4px 0 0; display: block; color: var(--brand); font-weight: 650; font-size: .84rem; text-decoration: underline; text-underline-offset: 3px; }
+button.task { font: inherit; color: inherit; }
