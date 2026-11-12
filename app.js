@@ -12,6 +12,7 @@ const fmtHM = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
 const mmss = s => `${pad(Math.floor(s / 60))}:${pad(Math.floor(s % 60))}`;
 const nf = (n, d = 1) => Number(n).toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d });
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const DAY1 = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
 const DAYS_L = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 const I = {
@@ -33,7 +34,7 @@ const I = {
 /* ---------- Estado ---------- */
 const KEY = 'pulsosano.v1';
 const DEF = {
-  profile: null, bp: [], done: {}, water: {}, km: {}, fired: {}, sound: true,
+  profile: null, bp: [], done: {}, water: {}, km: {}, dash: {}, wlog: [], adj: 0, run: null, fired: {}, sound: true,
   rem: {
     ex: { on: true, time: '18:30', days: [1, 2, 3, 4, 5, 6, 0] },
     water: { on: true, from: '08:30', to: '21:00', every: 90 },
@@ -43,9 +44,9 @@ const DEF = {
   },
 };
 let S = structuredClone(DEF);
-try { const raw = JSON.parse(localStorage.getItem(KEY)); if (raw) { S = Object.assign(S, raw); S.rem = Object.assign(structuredClone(DEF.rem), raw.rem || {}); } } catch (e) { /* sin almacenamiento */ }
+try { const raw = JSON.parse(localStorage.getItem(KEY)); if (raw) { S = Object.assign(S, raw); S.rem = Object.assign(structuredClone(DEF.rem), raw.rem || {}); S.dash ||= {}; S.wlog ||= []; } } catch (e) { /* sin almacenamiento */ }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
-let tab = 'hoy', planTab = 'dia', bpRange = 30, dietDay = (new Date().getDay() + 6) % 7;
+let tab = 'hoy', planTab = 'dia', bpRange = 30, dietDay = (new Date().getDay() + 6) % 7, exCat = 'all';
 
 /* ---------- Cálculos del perfil ---------- */
 function calc(p = S.profile) {
@@ -63,63 +64,102 @@ function calc(p = S.profile) {
     goalKg: lose ? Math.round(p.weight * .95 * 10) / 10 : null,
   };
 }
+/* ---------- Fuentes y vídeos (verificados en noviembre de 2026) ---------- */
+const REF = {
+  edwards: ['Edwards et al., Br J Sports Med 2023. Metaanálisis de 270 ensayos y 15.827 personas', 'https://doi.org/10.1136/bjsports-2022-106503'],
+  wall: ['Decaux et al., Physiol Rep 2022. Ensayo controlado de sentadilla en pared en casa', 'https://pmc.ncbi.nlm.nih.gov/articles/PMC8792514'],
+  nemoto: ['Nemoto et al., Mayo Clin Proc 2007. Caminata por intervalos en 246 personas de 63 años de media', 'https://pubmed.ncbi.nlm.nih.gov/17605959/'],
+  taichi: ['Ensayo de 2024 con 342 personas: tai chi frente a ejercicio aeróbico', 'https://www.healthline.com/health-news/want-to-lower-your-blood-pressure-tai-chi-may-work-better-than-aerobics'],
+  breath: ['Metaanálisis de respiración lenta, Mindfulness 2024 (31 estudios)', 'https://link.springer.com/article/10.1007/s12671-023-02294-2'],
+  steps: ['Metaanálisis de pasos diarios y tensión, J Hum Hypertens 2018', 'https://www.nature.com/articles/s41371-018-0100-z'],
+  dash: ['Plan de alimentación DASH, NHLBI (Institutos Nacionales de Salud de EE. UU.)', 'https://www.nhlbi.nih.gov/education/dash/following-dash'],
+  esc: ['Guía ESC 2024 de presión arterial elevada e hipertensión', 'https://doi.org/10.1093/eurheartj/ehae178'],
+  ampa: ['Protocolo de medida en casa 7-2-2, J Clin Hypertens 2022', 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9532917/'],
+};
+const src = k => `<a class="src" href="${REF[k][1]}" target="_blank" rel="noopener">Fuente: ${REF[k][0].split('. ')[0]}</a>`;
+const yt = id => 'https://www.youtube.com/watch?v=' + id;
+const VID = {
+  wallsit: [['Bp78LCnPJ_k', 'Sentadilla isométrica con apoyo en la pared', 'Trainer Alex León'], ['mGTJtgmYgRw', 'Cómo hacer el Wall Sit', 'Estudio Training']],
+  strength: [['z-qvGdhp1c4', '14 ejercicios para mejorar fuerza, equilibrio y marcha', 'Lluis Busquets'], ['PEZ39umfA6U', 'Ejercicios básicos para ganar fuerza a cualquier edad', 'Fisiolution']],
+  iwalk: [['Yp-YgfuUqK4', 'Caminata japonesa 3×3 (en inglés, se sigue por imagen)', 'SeniorShape Fitness']],
+  taichi: [['E4JP9NaVAvc', 'Tai chi en casa para principiantes', 'Escuela Zoreda'], ['t6KE3tb5bdo', 'Clase completa de Tai Chi Chuan para entrenar en casa', 'Anibal Tanus']],
+  bp: [['4XVGx7-O-TY', 'Medir correctamente la tensión arterial', 'Rioja Salud'], ['gbglNgei-IU', '¿Cómo medir la presión arterial en casa?', 'Top Doctors LATAM']],
+  dash: [['-BUMPOnKPmQ', 'Dieta DASH: alimentación saludable para bajar la presión arterial', 'Universal Community Health Center'], ['LKNereL9OWU', 'La dieta DASH', 'Stroke Prevention']],
+};
+const vids = k => (VID[k] || []).map(([id, t, ch]) => `<a class="vid" href="${yt(id)}" target="_blank" rel="noopener"><i class="yt">${I.play}</i><span><b>${t}</b><span class="small muted">${ch} · YouTube</span></span></a>`).join('');
+
+/* ---------- Programa de 12 semanas ---------- */
+const PROG = {
+  hold: { ini: [45, 60, 75, 90, 90, 105, 120, 120, 120, 120, 120, 120], med: [75, 90, 105, 120, 120, 120, 120, 120, 120, 120, 120, 120], act: Array(12).fill(120) },
+  aer: { ini: [15, 20, 25, 30, 30, 35, 35, 40, 40, 45, 45, 45], med: [25, 30, 35, 40, 40, 40, 45, 45, 45, 50, 50, 50], act: [35, 40, 45, 45, 45, 50, 50, 55, 55, 60, 60, 60] },
+  rounds: { ini: [1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3], med: [2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3], act: Array(12).fill(3) },
+};
+const PHASES = [['Adaptación', 'Aprender la técnica y crear el hábito. Sentadilla alta.'], ['Progresión', 'Más tiempo y llegan los intervalos. Sentadilla media.'], ['Consolidación', 'Dosis completa: 4 × 2 min y 150 min o más. Sentadilla más baja.']];
+const DEPTH = ['posición alta, rodillas poco dobladas (unos 120–130°)', 'posición media (unos 110°)', 'posición más baja, sin pasar de 90–95°'];
 function progWeek() {
   const days = Math.floor((new Date(dkey()) - new Date(S.profile.start)) / 864e5);
-  return clamp(Math.floor(days / 7) + 1, 1, 4);
+  return clamp(Math.floor(days / 7) + 1 + (S.adj || 0), 1, 12);
 }
-const PROG = {
-  hold: { ini: [60, 75, 90, 120], med: [90, 105, 120, 120], act: [120, 120, 120, 120] },
-  aer: { ini: [20, 25, 30, 35], med: [30, 35, 40, 40], act: [40, 45, 45, 50] },
-  rounds: { ini: [1, 2, 2, 2], med: [2, 2, 3, 3], act: [3, 3, 3, 3] },
-};
+const phaseOf = w => Math.floor((w - 1) / 4);
 function params(w = progWeek()) {
-  const L = S.profile.level;
-  return { hold: PROG.hold[L][w - 1], aer: PROG.aer[L][w - 1], rounds: PROG.rounds[L][w - 1] };
+  const L = S.profile.level, ph = phaseOf(w);
+  return { w, ph, hold: PROG.hold[L][w - 1], aer: PROG.aer[L][w - 1], rounds: PROG.rounds[L][w - 1], sets: 3 + ph };
 }
 
 /* ---------- Ejercicios ---------- */
+const CAT = { iso: 'Isométrico', aer: 'Aeróbico', str: 'Fuerza', relax: 'Calma', mov: 'Movilidad' };
+const warm = (secs = 90) => ({ label: 'Calentamiento', secs, type: 'rest', anim: 'march', sub: 'Marcha suave en el sitio y círculos de hombros' });
 const EX = {
   wallsit: {
-    name: 'Sentadilla isométrica en pared', kind: 'Isométrico', anim: 'wallsit',
-    why: 'Es el ejercicio con mayor efecto medido sobre la tensión: unos 8 mmHg menos de sistólica tras varias semanas, 3 días por semana.',
-    steps: ['Espalda apoyada en la pared, pies a 40–50 cm y separados al ancho de caderas.', 'Baja deslizando hasta notar trabajo en los muslos. Empieza alto (60–70°) y baja hacia 90° con las semanas.', 'Aguanta quieto respirando sin parar. 4 series con 1 minuto de descanso.'],
-    safe: 'No aguantes la respiración. Si la rodilla molesta, sube un poco la posición.',
-    cues: ['Respira: 4 segundos dentro, 4 fuera', 'No aguantes el aire', 'Espalda pegada a la pared', 'Peso en los talones', 'Hombros relajados'],
-    build: p => series(4, p.hold, 60, 'wallsit', 'Aguanta'),
+    name: 'Sentadilla isométrica en pared', cat: 'iso', anim: 'wallsit', fx: '−8 mmHg', ref: 'edwards', rpe: [4, 7],
+    why: 'El ejercicio isométrico es el que más baja la tensión en reposo: de media 8,2 mmHg la sistólica y 4 la diastólica. Dentro de él, la sentadilla en pared fue la variante más eficaz.',
+    steps: ['Espalda y cabeza apoyadas en la pared, pies a 40–50 cm y al ancho de caderas.', 'Baja deslizando hasta tu profundidad de esta fase y quédate quieto.', 'Protocolo de los estudios: 4 series de 2 minutos con 2 minutos de descanso, 3 días por semana en días alternos.', 'La última serie debe costar (7 sobre 10), sin llegar a temblar ni a contener el aire.'],
+    safe: 'Respira sin parar: durante el esfuerzo la tensión sube y aguantar el aire la dispara. Si molesta la rodilla, sube la posición.',
+    cues: ['Respira: 4 segundos dentro, 4 fuera', 'No aguantes el aire', 'Espalda pegada a la pared', 'Rodillas sobre los tobillos', 'Peso en los talones', 'Hombros y mandíbula relajados'],
+    build: p => [warm(), ...series(4, p.hold, 120, 'wallsit', 'Aguanta')],
   },
   grip: {
-    name: 'Apretón isométrico de mano', kind: 'Isométrico', anim: 'grip',
-    why: 'Alternativa sin carga en las rodillas. Apretar al 30 % de tu fuerza también baja la tensión con la práctica.',
-    steps: ['Usa una pelota blanda o una pinza de mano.', 'Aprieta a un tercio de tu fuerza máxima y mantén.', '4 series alternando mano, con 1 minuto de descanso.'],
-    safe: 'Aprieta suave y constante. Respira con normalidad.',
-    cues: ['Aprieta a un tercio de tu fuerza', 'Respira con normalidad', 'Hombro relajado'],
+    name: 'Apretón isométrico de mano', cat: 'iso', anim: 'grip', fx: '−7 mmHg', ref: 'edwards', rpe: [3, 5],
+    why: 'La versión isométrica sin carga en las rodillas. Apretar al 30 % de tu fuerza máxima también reduce la tensión con la práctica regular.',
+    steps: ['Usa una pelota blanda, una toalla enrollada o una pinza de mano.', 'Aprieta a un tercio de tu fuerza máxima y mantén 2 minutos.', '4 series alternando mano, con 1 minuto de descanso, 3 días por semana.'],
+    safe: 'Aprieta suave y constante, con el hombro relajado. Respira con normalidad.',
+    cues: ['Aprieta a un tercio de tu fuerza', 'Respira con normalidad', 'Hombro lejos de la oreja', 'Fuerza constante, sin tirones'],
     build: p => series(4, Math.max(90, p.hold), 60, 'grip', i => (i % 2 ? 'Mano izquierda' : 'Mano derecha')),
   },
   walk: {
-    name: 'Caminata rápida', kind: 'Aeróbico', anim: 'walk', gps: true,
-    why: 'Caminar a paso vivo 150 minutos por semana baja la tensión entre 5 y 7 mmHg y mejora el colesterol.',
-    steps: ['Empieza suave 3 minutos.', 'Sube a un ritmo en el que puedas hablar pero no cantar (Zona 2).', 'Acaba con 3 minutos tranquilos.'],
-    safe: 'Calzado con amortiguación. Si te mareas o notas dolor en el pecho, para.',
-    cues: ['Deberías poder hablar sin ahogarte', 'Brazos sueltos, mirada al frente', 'Paso corto y rítmico', 'Hombros abajo'],
+    name: 'Caminata rápida', cat: 'aer', anim: 'walk', gps: true, fx: '−4,5 mmHg', ref: 'edwards', rpe: [4, 6],
+    why: 'El ejercicio aeróbico baja de media 4,5 mmHg la sistólica, y más en personas con hipertensión. Cada 2.000 pasos extra al día restan unos 4 mmHg.',
+    steps: ['3 minutos suaves para calentar.', 'Sube a un ritmo en el que puedas hablar pero no cantar (Zona 2).', '3 minutos tranquilos para terminar.', 'Meta semanal: 150 minutos repartidos en 4 o 5 días.'],
+    safe: 'Calzado con amortiguación. Con mareo o dolor en el pecho, para y siéntate.',
+    cues: ['Deberías poder hablar sin ahogarte', 'Brazos sueltos, mirada al frente', 'Paso corto y rítmico', 'Hombros abajo', 'Apoya talón y empuja con los dedos'],
     build: (p, min) => cardio(min || p.aer, 'walk'),
   },
+  iwalk: {
+    name: 'Caminata por intervalos 3 + 3', cat: 'aer', anim: 'walkfast', gps: true, fx: '−9 mmHg', ref: 'nemoto', rpe: [3, 7],
+    why: 'Método japonés: alternar 3 minutos rápidos y 3 lentos. En un ensayo de 5 meses bajó la sistólica 9 mmHg y la diastólica 5, más que caminar a ritmo continuo.',
+    steps: ['3 minutos rápido: paso largo, te cuesta mantener una conversación.', '3 minutos lento: paseo cómodo para recuperar.', 'Repite los bloques. El estudio usó 5 bloques o más, 4 días por semana.'],
+    safe: 'En el tramo rápido debes notar esfuerzo, no ahogo. Si no recuperas en el tramo lento, alarga el descanso.',
+    cues: ['Paso largo y brazos activos', 'Cuesta hablar, pero puedes', 'Mirada al frente'],
+    build: p => [{ label: 'Calentamiento suave', secs: 180, type: 'rest', anim: 'walk' },
+      ...Array.from({ length: p.sets }, (_, i) => [{ label: 'Rápido', secs: 180, type: 'work', anim: 'walkfast', sub: `Bloque ${i + 1} de ${p.sets}` }, { label: 'Lento', secs: 180, type: 'rest', anim: 'walkslow', sub: `Bloque ${i + 1} de ${p.sets} · recupera` }]).flat()],
+  },
   bike: {
-    name: 'Bicicleta o elíptica', kind: 'Aeróbico', anim: 'bike',
-    why: 'Mismo beneficio que caminar, sin impacto en rodillas y caderas.',
-    steps: ['3 minutos de pedaleo suave.', 'Resistencia media, ritmo constante en Zona 2.', '3 minutos suaves para terminar.'],
-    safe: 'Ajusta el sillín: la rodilla casi estirada abajo.',
-    cues: ['Pedaleo redondo y constante', 'Deberías poder hablar', 'Relaja las manos'],
+    name: 'Bicicleta o elíptica', cat: 'aer', anim: 'bike', fx: '−4,5 mmHg', ref: 'edwards', rpe: [4, 6],
+    why: 'El mismo beneficio aeróbico sin impacto en rodillas y caderas. Buena opción con sobrepeso o molestias articulares.',
+    steps: ['3 minutos de pedaleo suave.', 'Resistencia media y cadencia constante en Zona 2.', '3 minutos suaves para terminar.'],
+    safe: 'Ajusta el sillín: la rodilla casi estirada con el pedal abajo.',
+    cues: ['Pedaleo redondo y constante', 'Deberías poder hablar', 'Relaja las manos', 'Espalda larga'],
     build: (p, min) => cardio(min || p.aer, 'bike'),
   },
   strength: {
-    name: 'Circuito de fuerza', kind: 'Fuerza', anim: 'squat',
-    why: 'El músculo reduce la rigidez de las arterias y ayuda a controlar peso y azúcar. Suma unos 3–4 mmHg menos.',
-    steps: ['5 ejercicios: sentadilla a silla, flexiones en pared, remo con goma, puente de glúteo y elevación de talones.', '40 segundos de trabajo y 20 de descanso.', 'Movimiento controlado, sin llegar al fallo.'],
+    name: 'Circuito de fuerza', cat: 'str', anim: 'squat', fx: '−4,5 mmHg', ref: 'edwards', rpe: [5, 7],
+    why: 'El entrenamiento de fuerza dinámica baja de media 4,5 mmHg la sistólica y 3 la diastólica. Además protege músculo, huesos y azúcar en sangre.',
+    steps: ['5 ejercicios: sentadilla a silla, flexiones en pared, remo con goma, puente de glúteo y elevación de talones.', '40 segundos de trabajo y 20 de descanso; unas 10–15 repeticiones lentas.', 'Termina cada ejercicio pudiendo hacer 2 o 3 repeticiones más.', '2 días por semana, no consecutivos.'],
     safe: 'Suelta el aire al hacer fuerza. Nunca empujes aguantando la respiración.',
-    cues: ['Suelta el aire al hacer fuerza', 'Movimiento lento y controlado', 'Calidad antes que cantidad'],
+    cues: ['Suelta el aire al hacer fuerza', '2 segundos para subir, 3 para bajar', 'Calidad antes que cantidad'],
     build: p => {
       const set = [['squat', 'Sentadilla a silla'], ['pushup', 'Flexiones en pared'], ['row', 'Remo con goma'], ['bridge', 'Puente de glúteo'], ['calf', 'Elevación de talones']];
-      const ph = [];
+      const ph = [warm()];
       for (let r = 0; r < p.rounds; r++) set.forEach(([a, n], i) => {
         ph.push({ label: n, secs: 40, type: 'work', anim: a, sub: `Ronda ${r + 1} de ${p.rounds}` });
         if (!(r === p.rounds - 1 && i === set.length - 1)) ph.push({ label: 'Descanso', secs: 20, type: 'rest', anim: set[(i + 1) % set.length][0], sub: 'Siguiente: ' + set[(i + 1) % set.length][1] });
@@ -127,16 +167,24 @@ const EX = {
       return ph;
     },
   },
+  taichi: {
+    name: 'Movimiento lento tipo tai chi', cat: 'relax', anim: 'flow', fx: '−6 mmHg', ref: 'taichi', rpe: [2, 3],
+    why: 'En un ensayo de un año en personas con tensión algo alta, el tai chi bajó la sistólica 6,2 mmHg a los 6 meses, frente a 4,9 del ejercicio aeróbico.',
+    steps: ['De pie, rodillas ligeramente flexionadas y hombros sueltos.', 'Sigue la figura: sube los brazos al inhalar y bájalos al exhalar, muy despacio.', 'Pasa el peso de una pierna a otra sin prisa.', 'Para aprender una forma completa, sigue una de las clases en vídeo.'],
+    safe: 'Movimiento continuo y sin esfuerzo. Ten una silla cerca si tu equilibrio es justo.',
+    cues: ['Tan lento como puedas', 'Inhala al subir, exhala al bajar', 'Rodillas blandas', 'Hombros sueltos'],
+    build: () => [['flow', 'Subir y bajar los brazos'], ['flow2', 'Empujar al frente'], ['flow', 'Subir y bajar los brazos'], ['flow2', 'Empujar al frente']].map(([a, n], i) => ({ label: n, secs: 150, type: 'work', anim: a, sub: `Parte ${i + 1} de 4` })),
+  },
   breath: {
-    name: 'Respiración lenta', kind: 'Relajación', anim: 'breath',
-    why: 'Respirar a unas 6 respiraciones por minuto calma el sistema nervioso y baja la tensión de forma inmediata.',
+    name: 'Respiración lenta', cat: 'relax', anim: 'breath', fx: 'calma', ref: 'breath', rpe: [1, 1],
+    why: 'Respirar a unas 6 respiraciones por minuto reduce la tensión en el momento. El efecto a largo plazo es modesto y los estudios no coinciden, así que úsala como complemento.',
     steps: ['Siéntate con la espalda apoyada.', 'Inhala por la nariz 4 segundos mientras crece el círculo.', 'Exhala despacio 6 segundos mientras se encoge.'],
     safe: 'Si te mareas, vuelve a tu respiración normal.',
     cues: [], build: () => [{ label: 'Respira con el círculo', secs: 300, type: 'work', anim: 'breath' }],
   },
   stretch: {
-    name: 'Estiramientos suaves', kind: 'Movilidad', anim: 'st_up',
-    why: 'Mantienen las articulaciones listas para moverte cada día y ayudan a relajar.',
+    name: 'Estiramientos suaves', cat: 'mov', anim: 'st_up', fx: 'movilidad', rpe: [2, 3],
+    why: 'Mantienen las articulaciones listas para moverte cada día y ayudan a soltar tensión después del ejercicio.',
     steps: ['4 posturas de 45 segundos.', 'Estira hasta notar tensión agradable, sin dolor.', 'Respira lento todo el tiempo.'],
     safe: 'Sin rebotes.',
     cues: ['Sin rebotes', 'Respira lento', 'Tensión agradable, nunca dolor'],
@@ -148,7 +196,7 @@ function series(n, work, rest, anim, label) {
   const ph = [];
   for (let i = 0; i < n; i++) {
     ph.push({ label: typeof label === 'function' ? label(i) : label, secs: work, type: 'work', anim, sub: `Serie ${i + 1} de ${n}` });
-    if (i < n - 1) ph.push({ label: 'Descanso', secs: rest, type: 'rest', anim: 'stand', sub: 'Camina un poco y respira' });
+    if (i < n - 1) ph.push({ label: 'Descanso', secs: rest, type: 'rest', anim: 'stand', sub: 'Camina un poco y respira hondo' });
   }
   return ph;
 }
@@ -158,19 +206,21 @@ function cardio(min, anim) {
     { label: 'Ritmo vivo · Zona 2', secs: (min - 2 * w) * 60, type: 'work', anim },
     { label: 'Vuelta a la calma', secs: w * 60, type: 'rest', anim }];
 }
-const SHORT = { wallsit: 'Isométrico pared', grip: 'Isométrico mano', walk: 'Caminata', bike: 'Bici', strength: 'Fuerza', breath: 'Respiración', stretch: 'Estiramientos' };
-const exMin = (id, min) => Math.round(EX[id].build(params(), min).reduce((a, p) => a + p.secs, 0) / 60);
+const SHORT = { wallsit: 'Isométrico pared', grip: 'Isométrico mano', walk: 'Caminata', iwalk: 'Intervalos', bike: 'Bici', strength: 'Fuerza', taichi: 'Tai chi', breath: 'Respiración', stretch: 'Estiramientos' };
+const AER = ['walk', 'iwalk', 'bike'];
+const exMin = (id, min, w) => Math.round(EX[id].build(params(w), min).reduce((a, p) => a + p.secs, 0) / 60);
 
 /* Plan semanal: índice = día de la semana (0 domingo) */
 function tasksFor(date = new Date(), w) {
-  const p = S.profile ? params(w) : { aer: 30 };
-  const iso = S.profile?.knee ? 'grip' : 'wallsit', aer2 = S.profile?.knee ? 'bike' : 'walk';
+  if (!S.profile) return [];
+  const p = params(w), knee = S.profile.knee, iso = knee ? 'grip' : 'wallsit', aer2 = knee ? 'bike' : 'walk';
   const short = Math.max(10, Math.round(p.aer / 2 / 5) * 5), long = p.aer + 10;
+  const sat = p.ph >= 1 && !knee ? ['iwalk'] : [aer2, long];
   const plan = {
     1: [[iso], ['walk', short]], 2: [[aer2, p.aer], ['breath']], 3: [[iso], ['strength']], 4: [['bike', p.aer], ['stretch']],
-    5: [[iso], ['walk', short]], 6: [[aer2, long], ['strength']], 0: [['walk', 20], ['breath'], ['stretch']],
+    5: [[iso], ['walk', short]], 6: [sat, ['strength']], 0: [['taichi'], ['walk', Math.max(15, short)], ['stretch']],
   }[date.getDay()];
-  return plan.map(([id, min]) => ({ id, min, total: S.profile ? exMin(id, min) : min || 10 }));
+  return plan.map(([id, min]) => ({ id, min, total: exMin(id, min, p.w) }));
 }
 const doneOn = k => S.done[k] || {};
 function setDone(id, minutes, k = dkey()) { (S.done[k] ||= {})[id] = minutes; save(); }
@@ -178,10 +228,11 @@ function weekStart(d = new Date()) { return addDays(new Date(d.getFullYear(), d.
 function weekStats() {
   const s = weekStart(); let aer = 0, iso = 0, str = 0, total = 0;
   for (let i = 0; i < 7; i++) for (const [id, m] of Object.entries(doneOn(dkey(addDays(s, i))))) {
-    total += m; if (id === 'walk' || id === 'bike') aer += m; if (id === 'wallsit' || id === 'grip') iso++; if (id === 'strength') str++;
+    total += m; if (AER.includes(id)) aer += m; if (id === 'wallsit' || id === 'grip') iso++; if (id === 'strength') str++;
   }
   return { aer, iso, str, total };
 }
+function dayState(d) { const n = Object.keys(doneOn(dkey(d))).length; return !n ? '' : n >= tasksFor(d).length ? 'full' : 'part'; }
 function streak() {
   let n = 0, d = new Date();
   if (!Object.keys(doneOn(dkey(d))).length) d = addDays(d, -1);
@@ -206,6 +257,13 @@ function pose(anim, t) {
     case 'wallsit': return { sh: [73, 74 + b], hip: [74, 122], f: [[112, G], [119, G]], h: [[104, 121], [108, 122]], props: wall(60) };
     case 'walk': { const ph = 2 * Math.PI * t / 1.1, s = Math.sin(ph), c = Math.cos(ph);
       return { sh: [102, 71 + Math.abs(s) * 2], hip: [100, 111 + Math.abs(s) * 2], f: [[100 + 21 * s, G - 7 * Math.max(0, c)], [100 - 21 * s, G - 7 * Math.max(0, -c)]], h: [[102 - 19 * s, 110], [102 + 19 * s, 110]] }; }
+    case 'walkfast': case 'walkslow': case 'march': { const T = anim === 'walkfast' ? .75 : anim === 'walkslow' ? 1.5 : 1, ph = 2 * Math.PI * t / T, s = Math.sin(ph), c = Math.cos(ph), A = anim === 'walkfast' ? 26 : anim === 'walkslow' ? 15 : 0;
+      if (anim === 'march') return { sh: [100, 72], hip: [100, 112], f: [[101, G - 26 * Math.max(0, s)], [99, G - 26 * Math.max(0, -s)]], h: [[108 + 8 * s, 104 + 8 * s], [108 - 8 * s, 104 - 8 * s]] };
+      return { sh: [103 + (A > 20 ? 3 : 0), 71 + Math.abs(s) * 2], hip: [100, 111 + Math.abs(s) * 2], f: [[100 + A * s, G - 8 * Math.max(0, c)], [100 - A * s, G - 8 * Math.max(0, -c)]], h: [[103 - A * s, 108], [103 + A * s, 108]] }; }
+    case 'flow': { const s = pp(8), sh = 4 * Math.sin(2 * Math.PI * t / 16);
+      return { sh: [100 + sh, 74 + 4 * (1 - s)], hip: [100 + sh, 114 + 4 * (1 - s)], f: [[88, G], [114, G]], h: [mix([118, 112], [132, 62], s), mix([114, 114], [128, 64], s)] }; }
+    case 'flow2': { const s = pp(8);
+      return { sh: mix([96, 75], [106, 75], s), hip: mix([94, 116], [106, 116], s), f: [[84, G], [120, G]], h: [mix([108, 92], [146, 84], s), mix([106, 96], [144, 88], s)] }; }
     case 'bike': { const ph = 2 * Math.PI * t / 1.3, c = [100, 150];
       return { sh: [116, 72 + b * .5], head: [125, 56 + b * .5], hip: [86, 104], f: [[c[0] + 11 * Math.cos(ph), c[1] + 11 * Math.sin(ph)], [c[0] - 11 * Math.cos(ph), c[1] - 11 * Math.sin(ph)]], h: [[138, 100], [138, 100]],
         props: `<circle class="prop" cx="52" cy="148" r="22"/><circle class="prop" cx="152" cy="148" r="22"/><path class="prop" d="M52 148L86 112L100 150L52 148M86 112L132 112L152 148M132 112L138 100M78 108H94"/>` }; }
@@ -234,7 +292,7 @@ function figSVG(anim, t) {
   const L = (a, b, cls) => `<path class="limb ${cls}" d="M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}"/>`;
   const leg = (f, cls) => { const k = ik(p.hip, f, 34, 34, -1); return L(p.hip, k, cls) + L(k, f, cls) + L(f, [f[0] + 9, f[1]], cls); };
   const arm = (h, cls) => { const e = ik(p.sh, h, 24, 24, p.ed ?? 1); return L(p.sh, e, cls) + L(e, h, cls); };
-  return `<path class="floor" d="M14 ${G + 6}H186"/>${p.props || ''}${leg(p.f[1], 'back')}${arm(p.h[1], 'back')}${L(p.sh, p.hip, '')}${leg(p.f[0], '')}${arm(p.h[0], '')}<circle class="head" cx="${head[0].toFixed(1)}" cy="${head[1].toFixed(1)}" r="11"/>`;
+  return `<ellipse class="shade" cx="${((p.f[0][0] + p.f[1][0]) / 2).toFixed(1)}" cy="${G + 6}" rx="46" ry="5"/>${p.props || ''}${leg(p.f[1], 'back')}${arm(p.h[1], 'back')}${L(p.sh, p.hip, 'torso')}${leg(p.f[0], '')}${arm(p.h[0], '')}<circle class="head" cx="${head[0].toFixed(1)}" cy="${head[1].toFixed(1)}" r="11"/>`;
 }
 const fig = (anim, live = true) => `<svg class="fig" viewBox="0 0 200 200" data-anim="${anim}" ${live ? '' : 'data-still="1"'} aria-hidden="true">${figSVG(anim, .8)}</svg>`;
 const noMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -369,6 +427,16 @@ function wireChart() {
 }
 
 /* ---------- Dieta ---------- */
+/* Raciones DASH según la tabla del NHLBI para 1.600, 2.000 y 2.600 kcal */
+const DASH = {
+  1600: { grain: 6, veg: 3, fruit: 4, dairy: 2, leg: 1, meat: '3–4', legTxt: '3–4 por semana', oil: 2, sweet: '3 por semana' },
+  2000: { grain: 6, veg: 4, fruit: 4, dairy: 2, leg: 1, meat: '6', legTxt: '4–5 por semana', oil: 2, sweet: '5 por semana' },
+  2600: { grain: 10, veg: 5, fruit: 5, dairy: 3, leg: 1, meat: '6', legTxt: '1 al día', oil: 3, sweet: '2 al día' },
+};
+const GROUPS = [['veg', 'Verduras y hortalizas', '1 ración: un plato de ensalada o media taza cocida'], ['fruit', 'Fruta', '1 ración: una pieza mediana'],
+  ['grain', 'Cereales integrales', '1 ración: una rebanada de pan o media taza de arroz o pasta'], ['dairy', 'Lácteos bajos en grasa', '1 ración: un vaso de leche o dos yogures'],
+  ['leg', 'Legumbres o frutos secos', '1 ración: media taza de legumbre o un puñado sin sal']];
+const dashTier = kcal => (kcal <= 1750 ? 1600 : kcal <= 2300 ? 2000 : 2600);
 const MENU = [
   ['Avena con plátano, nueces y canela', 'Lentejas estofadas con verduras · ensalada de tomate', 'Yogur natural con fresas', 'Merluza al horno con calabacín y patata cocida'],
   ['Tostada integral con tomate, aceite de oliva y aguacate', 'Pollo a la plancha con arroz integral y brócoli', 'Un puñado de almendras sin sal', 'Crema de calabaza · tortilla francesa con espinacas'],
@@ -377,97 +445,146 @@ const MENU = [
   ['Batido de leche desnatada, plátano y avena', 'Alubias blancas con verduras · ensalada verde', 'Yogur natural con nueces', 'Sardinas al horno con tomate y patata cocida'],
   ['Tortilla francesa con tomate · pan integral', 'Arroz integral con verduras, pollo y limón', 'Fruta de temporada', 'Ensalada completa: hojas verdes, garbanzos, aguacate y huevo'],
   ['Pan integral con aceite, tomate y pavo bajo en sal', 'Dorada al horno con verduras asadas', 'Yogur con frutos rojos', 'Sopa de verduras casera sin pastilla · queso fresco'],
+  ['Porridge de avena con manzana rallada y canela', 'Ensalada de lentejas con pimiento, cebolla y huevo duro', 'Naranja y un puñado de pistachos sin sal', 'Pechuga de pavo a la plancha con champiñones y judías verdes'],
+  ['Pan integral con hummus casero y pepino', 'Bacalao fresco al horno con patata y pimientos', 'Yogur natural con plátano', 'Crema de calabacín · ensalada de tomate con queso fresco'],
+  ['Yogur con copos de avena, pera y nueces', 'Guiso de garbanzos con acelgas y zanahoria', 'Dos mandarinas', 'Revuelto de huevos con espárragos · pan integral'],
+  ['Tostada integral con aguacate y huevo cocido', 'Quinoa con verduras asadas y pollo', 'Kéfir o yogur con semillas', 'Caballa a la plancha con ensalada de col y zanahoria'],
+  ['Batido de yogur, fresas y avena', 'Espaguetis integrales con tomate casero, berenjena y albahaca', 'Manzana con una cucharada de crema de cacahuete sin sal', 'Menestra de verduras con jamón cocido bajo en sal'],
+  ['Pan integral con tomate y aceite · fruta', 'Paella de verduras con alcachofas y judía verde', 'Yogur natural', 'Gazpacho o crema fría sin sal añadida · tortilla de calabacín'],
+  ['Tortitas de avena y plátano con yogur', 'Pollo asado sin piel con ensalada y boniato', 'Un puñado de nueces', 'Sopa de fideos integrales con verduras · lubina a la plancha'],
 ];
-const FOOD_YES = ['Verduras y hortalizas', 'Fruta entera', 'Legumbres', 'Cereales integrales', 'Pescado azul', 'Frutos secos sin sal', 'Aceite de oliva virgen', 'Lácteos bajos en grasa', 'Hierbas, ajo, limón y especias'];
-const FOOD_NO = ['Sal de mesa y pastillas de caldo', 'Embutidos y curados', 'Quesos curados', 'Conservas y encurtidos salados', 'Platos precocinados', 'Snacks salados', 'Bollería y azúcares', 'Refrescos', 'Alcohol'];
+const SALT = [['Pastilla de caldo (una)', '4–5 g'], ['Jamón serrano', '5 g'], ['Anchoas en lata', '9 g'], ['Aceitunas', '3–4 g'], ['Chorizo y embutidos', '3–4 g'], ['Queso curado', '1,5–2 g'], ['Pan blanco', '1,2 g'], ['Patatas fritas de bolsa', '1,3 g'], ['Queso fresco sin sal', '0,1 g'], ['Legumbre cocida en casa', '0 g']];
+const SWAPS = [['Salero y pastilla de caldo', 'ajo, limón, pimentón, comino y hierbas'], ['Embutido en el bocadillo', 'pollo asado, atún al natural o hummus'], ['Queso curado', 'queso fresco o requesón'],
+  ['Pan blanco', 'pan integral, mejor sin sal'], ['Snacks salados', 'frutos secos crudos o tostados sin sal'], ['Refresco o cerveza', 'agua con gas y limón'], ['Conserva en salmuera', 'conserva al natural, enjuagada']];
+const SHOP = { Verdulería: ['Espinacas', 'Tomate', 'Calabacín', 'Brócoli', 'Pimiento', 'Zanahoria', 'Remolacha', 'Plátano', 'Naranja', 'Manzana', 'Fresas o kiwi', 'Aguacate', 'Ajo y limón'],
+  Despensa: ['Lentejas', 'Garbanzos', 'Alubias', 'Avena', 'Arroz integral', 'Pasta integral', 'Pan integral', 'Nueces y almendras sin sal', 'Aceite de oliva virgen extra', 'Atún al natural', 'Especias'],
+  Fresco: ['Merluza o bacalao', 'Salmón, sardina o caballa', 'Pollo o pavo', 'Huevos', 'Yogur natural', 'Leche desnatada', 'Queso fresco'] };
+const TIPS = [['Cada 2.000 pasos más al día restan unos 4 mmHg de sistólica. Sube por la escalera y baja una parada antes.', 'steps'],
+  ['Los isométricos funcionan con 3 sesiones por semana. Más importante que la intensidad es no saltarte ninguna.', 'edwards'],
+  ['La guía europea de 2024 recomienda menos de 2 g de sodio al día: unos 5 g de sal, contando la que ya llevan los alimentos.', 'esc'],
+  ['Mídete siempre a la misma hora y anota la segunda medida. Un valor suelto dice poco; la media de la semana dice mucho.', 'ampa'],
+  ['Alternar 3 minutos rápidos y 3 lentos al caminar baja más la tensión que el mismo tiempo a ritmo constante.', 'nemoto'],
+  ['El plan DASH baja la tensión por sí solo, incluso antes de reducir la sal. Empieza por añadir una fruta y una verdura a cada comida.', 'dash'],
+  ['Si hoy no tienes fuerzas, 10 minutos de movimiento lento también cuentan y ayudan a mantener el hábito.', 'taichi']];
 
 /* ---------- Vistas ---------- */
 const ringSVG = (pct, size = 84) => { const r = 36, c = 2 * Math.PI * r; return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 84 84" aria-hidden="true"><circle class="trk" cx="42" cy="42" r="${r}"/><circle class="val" cx="42" cy="42" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - clamp(pct, 0, 1))}"/></svg>`; };
 function taskRow(t, k = dkey()) {
   const done = t.id in doneOn(k), e = EX[t.id];
-  return `<div class="task ${done ? 'done' : ''}"><div class="figbox">${fig(e.anim, false)}</div>
-    <div class="t"><b>${e.name}</b><span class="small muted">${e.kind} · ${t.total} min</span></div>
+  return `<div class="task ${done ? 'done' : ''}"><div class="figbox cat-${e.cat}">${fig(e.anim, false)}</div>
+    <div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${t.total} min</span></div>
     ${done ? '' : `<button class="play" data-open="${t.id}" data-min="${t.min || ''}" aria-label="Empezar ${e.name}">${I.play}</button>`}
     <button class="chk ${done ? 'on' : ''}" data-toggle="${t.id}" data-total="${t.total}" aria-label="${done ? 'Desmarcar' : 'Marcar hecho'} ${e.name}" aria-pressed="${done}">${I.check}</button></div>`;
 }
+function spark() {
+  const d = bpSorted().slice(-12); if (d.length < 3) return '';
+  const lo = Math.min(...d.map(x => x.d)), hi = Math.max(...d.map(x => x.s)), X = i => 4 + i / (d.length - 1) * 192, Y = v => 40 - (v - lo) / (hi - lo || 1) * 36;
+  const path = k => d.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(x[k]).toFixed(1)}`).join('');
+  return `<svg class="spark" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true"><path d="${path('s')}" fill="none" stroke="var(--sys)" stroke-width="2" vector-effect="non-scaling-stroke"/><path d="${path('d')}" fill="none" stroke="var(--dia)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
 function vHoy() {
-  const p = S.profile, c = calc(), k = dkey(), tasks = tasksFor(), nDone = tasks.filter(t => t.id in doneOn(k)).length, w = weekStats(), bp = lastBP();
-  const ml = S.water[k] || 0, glasses = Math.round(c.water / 250), km = S.km[k] || 0, cls = bp && bpClass(bp.s, bp.d);
-  const h = new Date().getHours(), hi = h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
-  return `<section class="hero"><div><div class="sub">${hi}${p.name ? ', ' + esc(p.name) : ''}</div><div class="big">${w.aer}<span style="font-size:1rem"> / 150 min</span></div>
-      <div class="sub">de ejercicio aeróbico esta semana · racha de ${streak()} ${streak() === 1 ? 'día' : 'días'}</div></div>${ringSVG(w.aer / 150)}</section>
+  const c = calc(), k = dkey(), tasks = tasksFor(), nDone = tasks.filter(t => t.id in doneOn(k)).length, w = weekStats(), bp = lastBP(), p = params();
+  const ml = S.water[k] || 0, km = S.km[k] || 0, cls = bp && bpClass(bp.s, bp.d), s = weekStart(), st = streak(), tip = TIPS[Math.floor(Date.now() / 864e5) % TIPS.length];
+  return `<div class="strip" aria-label="Semana">${Array.from({ length: 7 }, (_, i) => { const d = addDays(s, i); return `<div class="${dayState(d)} ${dkey(d) === k ? 'today' : ''}">${DAY1[d.getDay()]}<b>${d.getDate()}</b><i></i></div>`; }).join('')}</div>
+    <section class="hero"><div class="main"><div class="ringbox">${ringSVG(w.aer / 150, 104)}<div><span class="big">${w.aer}</span><span class="sub">de 150 min</span></div></div>
+      <div><p class="sub">Semana ${p.w} de 12 · ${PHASES[p.ph][0]}</p><h2>${w.aer >= 150 ? 'Meta aeróbica cumplida' : `Te faltan ${150 - w.aer} min aeróbicos esta semana`}</h2></div></div>
+      <div class="kpis"><div><b>${st}</b>${st === 1 ? 'día' : 'días'} de racha</div><div><b>${w.iso}/3</b>isométricos</div><div><b>${w.str}/2</b>fuerza</div></div></section>
     <section class="card"><div class="row"><h2 class="grow">Hoy toca</h2><span class="pill ${nDone === tasks.length ? 'good' : 'brand'}">${nDone} de ${tasks.length}</span></div>
       ${tasks.map(t => taskRow(t)).join('')}</section>
     <section class="card"><div class="row"><h2 class="grow">Tensión</h2>${bp ? `<span class="pill ${cls.c}">${cls.i} ${cls.t}</span>` : ''}</div>
-      ${bp ? `<div class="bpnow"><span class="v">${bp.s}/${bp.d}</span><span class="muted">mmHg${bp.p ? ` · ${bp.p} lpm` : ''}</span></div><p class="small muted">${new Date(bp.t).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}</p>` : '<p class="muted">Aún no hay medidas. Anota la primera para empezar el seguimiento.</p>'}
+      ${bp ? `<div class="row"><div class="grow"><div class="bpnow"><span class="v">${bp.s}/${bp.d}</span><span class="muted">mmHg</span></div><p class="small muted">${new Date(bp.t).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}${bp.p ? ` · ${bp.p} lpm` : ''}</p></div><div style="width:42%">${spark()}</div></div>` : '<p class="muted">Aún no hay medidas. Anota la primera para empezar el seguimiento.</p>'}
       <button class="btn" data-act="bp-add">${I.plus} Anotar tensión</button></section>
-    <section class="card"><div class="row"><h2 class="grow">Agua</h2><span class="pill water">${nf(ml / 1000, 2)} / ${nf(c.water / 1000)} L</span></div>
-      <div class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="glass ${i < Math.round(ml / 250) ? 'on' : ''}"></i>`).join('')}</div>
-      <div class="row"><button class="btn grow" data-act="water" data-ml="250">${I.plus} Un vaso (250 ml)</button><button class="btn ghost" data-act="water" data-ml="-250" aria-label="Quitar un vaso">−</button></div></section>
-    <section class="card"><div class="row"><h2 class="grow">Recorrido</h2><span class="pill">${nf(km)} / ${c.kmGoal} km</span></div>
-      <div class="bar"><i style="width:${clamp(km / c.kmGoal, 0, 1) * 100}%"></i></div>
-      <div class="row wrap"><button class="btn grow" data-open="walk">${I.run} Caminar con GPS</button><button class="btn ghost" data-act="km" data-km="0.5">+0,5 km</button><button class="btn ghost" data-act="km" data-km="-0.5" aria-label="Quitar medio kilómetro">−</button></div></section>
+    <div class="mini"><section class="card"><div class="row"><h3 class="grow">Agua</h3><span class="tile cat-relax" style="width:34px;height:34px;display:grid;place-items:center;border-radius:10px"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.500 6-11 6-11z"/></svg></span></div>
+        <div><span class="v">${nf(ml / 1000, 2)}</span> <span class="small muted">/ ${nf(c.water / 1000)} L</span></div><div class="bar water"><i style="width:${clamp(ml / c.water, 0, 1) * 100}%"></i></div>
+        <div class="row"><button class="btn sm grow" data-act="water" data-ml="250">+ Vaso</button><button class="rnd" data-act="water" data-ml="-250" aria-label="Quitar un vaso">−</button></div></section>
+      <section class="card"><div class="row"><h3 class="grow">Recorrido</h3><span class="tile cat-aer" style="width:34px;height:34px;display:grid;place-items:center;border-radius:10px"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 20c3-2 3-6 7-8s4-6 7-8"/></svg></span></div>
+        <div><span class="v">${nf(km)}</span> <span class="small muted">/ ${c.kmGoal} km</span></div><div class="bar"><i style="width:${clamp(km / c.kmGoal, 0, 1) * 100}%"></i></div>
+        <div class="row"><button class="btn sm grow" data-open="walk">GPS</button><button class="rnd" data-act="km" data-km="0.5" aria-label="Sumar medio kilómetro">+</button><button class="rnd" data-act="km" data-km="-0.5" aria-label="Quitar medio kilómetro">−</button></div></section></div>
+    <section class="card tipcard"><p class="eyebrow">Consejo de hoy</p><p>${tip[0]}</p>${src(tip[1])}</section>
     <section class="card"><h2>Logros</h2><div class="medals">${medals().map(m => `<div class="medal ${m.on ? 'on' : ''}"><b>${m.ic}</b>${m.t}</div>`).join('')}</div></section>`;
 }
 function medals() {
   const days = Object.keys(S.done).filter(k => Object.keys(S.done[k]).length).length, w = weekStats(), c = calc();
   return [{ ic: '1', t: 'Primera sesión', on: days >= 1 }, { ic: '7', t: 'Racha de 7 días', on: streak() >= 7 }, { ic: '150', t: 'Semana aeróbica', on: w.aer >= 150 }, { ic: '3×', t: 'Isométrico 3 días', on: w.iso >= 3 },
-    { ic: '10', t: '10 medidas de tensión', on: S.bp.length >= 10 }, { ic: 'H₂O', t: 'Agua cumplida hoy', on: (S.water[dkey()] || 0) >= c.water }];
+    { ic: '10', t: '10 medidas de tensión', on: S.bp.length >= 10 }, { ic: 'H₂O', t: 'Agua cumplida hoy', on: (S.water[dkey()] || 0) >= c.water }, { ic: '30', t: '30 días activos', on: days >= 30 }, { ic: 'F2', t: 'Llegar a la fase 2', on: progWeek() >= 5 }];
 }
 function vEj() {
-  const c = calc();
-  return `<section class="card flat"><div class="row"><div class="grow"><p class="eyebrow">Tu zona segura</p><h2 class="num">${c.z2[0]}–${c.z2[1]} lpm</h2></div><span class="pill brand">Zona 2</span></div>
+  const c = calc(), list = Object.entries(EX).filter(([, e]) => exCat === 'all' || e.cat === exCat || (exCat === 'relax' && e.cat === 'mov'));
+  return `<section class="card flat"><div class="row"><div class="grow"><p class="eyebrow">Tu zona aeróbica</p><h2 class="num" style="font-size:1.5rem">${c.z2[0]}–${c.z2[1]} lpm</h2></div><span class="pill brand">Zona 2</span></div>
     <p class="small muted">Entre el 60 y el 70 % de tu frecuencia máxima estimada (${c.fcm} lpm). Sin pulsómetro: debes poder hablar, pero no cantar.</p></section>
-    ${Object.entries(EX).map(([id, e]) => `<button class="card excard" data-open="${id}"><div class="figbox">${fig(e.anim)}</div><div><span class="pill">${e.kind} · ${exMin(id)} min</span><h3 style="margin:6px 0 2px">${e.name}</h3><p>${e.why.split('.')[0]}.</p></div></button>`).join('')}
-    <section class="card flat"><h3>Para y pide ayuda (112) si notas</h3><p class="small muted">Dolor opresivo en el pecho, falta de aire en reposo, pérdida de fuerza o habla, o un dolor de cabeza brusco e intenso. Mareo o dolor articular agudo: detén la sesión y descansa.</p></section>`;
+    <div class="chips" role="group" aria-label="Tipo de ejercicio">${[['all', 'Todos'], ['iso', 'Isométrico'], ['aer', 'Aeróbico'], ['str', 'Fuerza'], ['relax', 'Calma y movilidad']].map(([k, t]) => `<button class="chip" data-excat="${k}" aria-pressed="${exCat === k}">${t}</button>`).join('')}</div>
+    ${list.map(([id, e]) => `<button class="card excard" data-open="${id}"><div class="figbox cat-${e.cat}">${fig(e.anim)}</div><div><div class="row wrap" style="gap:6px"><span class="pill cat-${e.cat}">${CAT[e.cat]}</span><span class="pill">${exMin(id)} min</span>${e.ref ? `<span class="pill">${e.fx}</span>` : ''}</div><h3 style="margin:8px 0 2px">${e.name}</h3><p>${e.steps[0]}</p></div></button>`).join('')}
+    <section class="card flat"><h3>Para y pide ayuda (112) si notas</h3><p class="small muted">Dolor opresivo en el pecho, falta de aire en reposo, pérdida de fuerza o del habla, o un dolor de cabeza brusco e intenso. Con mareo o dolor articular agudo, detén la sesión y descansa.</p>
+      <p class="small muted">Las cifras en mmHg son la bajada media de la sistólica en los estudios tras varias semanas de práctica. Tu resultado puede ser distinto.</p><button class="btn ghost sm" data-act="refs">Ver fuentes</button></section>`;
+}
+function ampa() {
+  const days = Array.from({ length: 7 }, (_, i) => { const d = addDays(new Date(), i - 6), k = dkey(d), r = S.bp.filter(x => dkey(new Date(x.t)) === k);
+    return { d, r, am: r.some(x => new Date(x.t).getHours() < 14), pm: r.some(x => new Date(x.t).getHours() >= 14) }; });
+  const withData = days.filter(x => x.r.length), use = withData.slice(1).flatMap(x => x.r), ok = withData.length >= 4 && use.length;
+  const avg = ok ? { s: Math.round(use.reduce((a, x) => a + x.s, 0) / use.length), d: Math.round(use.reduce((a, x) => a + x.d, 0) / use.length) } : null;
+  return { days, n: withData.length, avg, first: withData[0]?.d };
 }
 function vBP() {
-  const bp = lastBP(), a7 = bpAvg(7), a30 = bpAvg(30), list = bpSorted().reverse();
+  const bp = lastBP(), a7 = bpAvg(7), a30 = bpAvg(30), list = bpSorted().reverse(), A = ampa();
   const hi = bp && (bp.s >= 180 || bp.d >= 110);
   return `${hi ? `<div class="note crit"><b>Tu última medida es muy alta (${bp.s}/${bp.d}).</b> Descansa 5 minutos sentado y repite. Si sigue igual, llama a tu centro de salud. Con dolor en el pecho, falta de aire, visión borrosa o debilidad en un lado del cuerpo, llama al 112.</div>` : ''}
     <section class="card"><div class="row"><div class="grow"><p class="eyebrow">Última medida</p>${bp ? `<div class="bpnow"><span class="v">${bp.s}/${bp.d}</span><span class="muted">mmHg</span></div>` : '<p class="muted">Sin medidas todavía</p>'}</div>
       ${bp ? (c => `<span class="pill ${c.c}">${c.i} ${c.t}</span>`)(bpClass(bp.s, bp.d)) : ''}</div>
       <div class="grid2"><div class="note"><span class="eyebrow">Media 7 días</span><br><b class="num" style="font-size:1.2rem">${a7 ? `${a7.s}/${a7.d}` : '—'}</b></div><div class="note"><span class="eyebrow">Media 30 días</span><br><b class="num" style="font-size:1.2rem">${a30 ? `${a30.s}/${a30.d}` : '—'}</b></div></div>
       <button class="btn" data-act="bp-add">${I.plus} Anotar tensión</button></section>
-    <section class="card"><div class="row"><h2 class="grow">Evolución</h2></div>
+    <section class="card"><div class="row"><h2 class="grow">Semana de control</h2>${A.avg ? (c => `<span class="pill ${A.avg.s >= 135 || A.avg.d >= 85 ? 'serious' : 'good'}">${A.avg.s}/${A.avg.d}</span>`)() : `<span class="pill">${A.n} de 7 días</span>`}</div>
+      <div class="ampa">${A.days.map(x => `<div class="${A.first && dkey(x.d) === dkey(A.first) ? 'skip' : ''}">${DAY1[x.d.getDay()]}<i class="${x.am ? 'on' : ''}" title="Mañana"></i><i class="${x.pm ? 'on' : ''}" title="Noche"></i></div>`).join('')}</div>
+      <p class="small muted">Es la medida que más valora tu médico: 2 tomas por la mañana y 2 por la noche durante 7 días. El primer día se descarta (atenuado) y se hace la media del resto. ${A.avg ? `Tu media es <b>${A.avg.s}/${A.avg.d}</b>; en casa, 135/85 o más indica hipertensión.` : 'Verás tu media cuando tengas 4 días con medidas.'}</p>${src('ampa')}</section>
+    <section class="card"><h2>Evolución</h2>
       <div class="seg" role="group" aria-label="Periodo">${[[7, '7 días'], [30, '30 días'], [90, '3 meses'], [0, 'Todo']].map(([d, t]) => `<button data-range="${d}" aria-pressed="${bpRange === d}">${t}</button>`).join('')}</div>${bpChart()}</section>
     <section class="card"><div class="row"><h2 class="grow">Historial</h2>${list.length ? '<button class="btn sm ghost" data-act="bp-csv">Exportar</button>' : ''}</div>
       <div class="list">${list.length ? list.slice(0, 40).map(x => { const c = bpClass(x.s, x.d); return `<div class="li"><div class="grow"><b class="num">${x.s}/${x.d}</b>${x.p ? ` <span class="muted small">${x.p} lpm</span>` : ''}<br><span class="small muted">${new Date(x.t).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${x.n ? ' · ' + esc(x.n) : ''}</span></div><span class="pill ${c.c}">${c.i} ${c.t}</span><button class="x" data-del="${x.t}" aria-label="Borrar medida">×</button></div>`; }).join('') : '<p class="muted small">Tus medidas aparecerán aquí.</p>'}</div></section>
-    <section class="card flat"><h3>Cómo medir bien</h3><p class="small muted">Sentado 5 minutos, espalda apoyada, pies en el suelo y brazo a la altura del corazón. Sin café, tabaco ni ejercicio en los 30 minutos previos. Haz dos medidas separadas un minuto y anota la segunda. En casa, el objetivo habitual es una media por debajo de 135/85 mmHg; tu médico puede fijar otro.</p></section>`;
+    <section class="card flat"><h3>Cómo medir bien</h3><ol class="small muted" style="margin:0;padding-left:20px;display:grid;gap:5px"><li>Sin café, tabaco ni ejercicio en los 30 minutos previos; vejiga vacía.</li><li>Sentado 5 minutos, espalda apoyada, pies en el suelo y sin cruzar las piernas.</li><li>Manguito en el brazo desnudo, a la altura del corazón. Mejor tensiómetro de brazo que de muñeca.</li><li>Sin hablar. Dos medidas separadas 1 minuto; anota la segunda.</li></ol>
+      ${vids('bp')}<p class="small muted">La guía europea de 2024 llama «presión elevada» a 120–139/70–89 e hipertensión a 140/90 o más en consulta. Tu médico decide tu objetivo.</p>${src('esc')}</section>`;
 }
 function vDieta() {
-  const c = calc(), m = MENU[dietDay], names = ['Desayuno', 'Comida', 'Merienda', 'Cena'];
+  const c = calc(), tier = dashTier(c.kcal), D = DASH[tier], k = dkey(), got = S.dash[k] || {}, m = MENU[dietDay], names = ['Desayuno', 'Comida', 'Merienda', 'Cena'];
+  const total = GROUPS.reduce((a, [g]) => a + Math.min(got[g] || 0, D[g]), 0), goal = GROUPS.reduce((a, [g]) => a + D[g], 0);
   return `<section class="card"><div class="row"><svg class="plate" viewBox="0 0 120 120" role="img" aria-label="Plato: mitad verduras, un cuarto proteína, un cuarto cereal integral">
-      <circle cx="60" cy="60" r="56" fill="var(--surface-2)"/><path d="M60 60V8A52 52 0 0 0 60 112Z" fill="var(--good)"/><path d="M60 60H112A52 52 0 0 0 60 8Z" fill="var(--dia)"/><path d="M60 60V112A52 52 0 0 0 112 60Z" fill="var(--warn)"/>
+      <circle cx="60" cy="60" r="56" fill="var(--surface-2)"/><path d="M60 60V8A52 52 0 0 0 60 112Z" fill="var(--c-mov)"/><path d="M60 60H112A52 52 0 0 0 60 8Z" fill="var(--c-iso)"/><path d="M60 60V112A52 52 0 0 0 112 60Z" fill="var(--c-str)"/>
       <path d="M60 8V112M60 60H112" stroke="var(--surface)" stroke-width="3"/></svg>
-      <div class="grow"><p class="eyebrow">Tu plato</p><h2>Patrón DASH mediterráneo</h2><p class="small muted" style="margin-top:6px"><b style="color:var(--good)">½</b> verduras · <b style="color:var(--dia)">¼</b> proteína (pescado, legumbre, pollo) · <b style="color:var(--warn)">¼</b> cereal integral</p></div></div>
-      <p class="small muted">Seguir este patrón baja la tensión sistólica entre 5 y 11 mmHg. Su clave: mucho potasio de frutas y verduras, y poca sal.</p></section>
+      <div class="grow"><p class="eyebrow">Tu plato</p><h2>DASH mediterráneo</h2><p class="small muted" style="margin-top:6px">½ verduras · ¼ proteína (pescado, legumbre, pollo) · ¼ cereal integral</p></div></div>
+      <p class="small muted">Rico en potasio, calcio, magnesio y fibra; pobre en sal, carne roja y azúcar. Baja la tensión por sí solo, y más si además reduces la sal.</p>${src('dash')}</section>
     <section class="grid3">
-      <div class="card flat"><p class="eyebrow">Energía</p><b class="num" style="font-size:1.25rem">${c.kcal}</b><span class="small muted">kcal al día${c.lose ? ', para bajar peso poco a poco' : ''}</span></div>
-      <div class="card flat"><p class="eyebrow">Sal</p><b class="num" style="font-size:1.25rem">&lt; 5 g</b><span class="small muted">una cucharadita, contando la oculta</span></div>
+      <div class="card flat"><p class="eyebrow">Energía</p><b class="num" style="font-size:1.25rem">${c.kcal}</b><span class="small muted">kcal al día${c.lose ? ', para bajar peso' : ''}</span></div>
+      <div class="card flat"><p class="eyebrow">Sal</p><b class="num" style="font-size:1.25rem">&lt; 5 g</b><span class="small muted">2 g de sodio, incluida la oculta</span></div>
       <div class="card flat"><p class="eyebrow">Agua</p><b class="num" style="font-size:1.25rem">${nf(c.water / 1000)} L</b><span class="small muted">unos ${Math.round(c.water / 250)} vasos</span></div></section>
-    <section class="card"><h2>Menú de la semana</h2><div class="chips" role="group" aria-label="Día">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d, i) => `<button class="chip" data-dday="${i}" aria-pressed="${dietDay === i}">${d}</button>`).join('')}</div>
+    <section class="card"><div class="row"><h2 class="grow">Raciones de hoy</h2><span class="pill ${total >= goal ? 'good' : 'brand'}">${total} de ${goal}</span></div>
+      <p class="small muted">Tu pauta DASH para unas ${tier.toLocaleString('es-ES')} kcal. Toca + cada vez que tomes una ración.</p>
+      ${GROUPS.map(([g, n, ex]) => `<div class="srv"><div><b>${n}</b> <span class="small muted">${got[g] || 0}/${D[g]}</span><br><span class="small muted">${ex}</span></div><div class="ctl"><button class="rnd" data-srv="${g}" data-n="-1" aria-label="Quitar ración de ${n}">−</button><button class="rnd add" data-srv="${g}" data-n="1" aria-label="Sumar ración de ${n}">+</button></div>
+        <div class="sdots" aria-hidden="true">${Array.from({ length: D[g] }, (_, i) => `<i class="${i < (got[g] || 0) ? 'on' : ''}"></i>`).join('')}</div></div>`).join('')}
+      <p class="small muted">Además: carne magra, ave o pescado, como mucho ${D.meat} raciones de 30 g al día; aceite de oliva, ${D.oil} cucharadas; dulces, como mucho ${D.sweet}. Legumbres y frutos secos: al menos ${D.legTxt}.</p></section>
+    <section class="card"><h2>Menú de 14 días</h2><div class="seg" role="group" aria-label="Semana del menú"><button data-dweek="0" aria-pressed="${dietDay < 7}">Semana A</button><button data-dweek="1" aria-pressed="${dietDay >= 7}">Semana B</button></div>
+      <div class="chips" role="group" aria-label="Día">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d, i) => `<button class="chip" data-dday="${i}" aria-pressed="${dietDay % 7 === i}">${d}</button>`).join('')}</div>
       <div class="meal">${m.map((x, i) => `<b>${names[i]}</b><span>${x}</span>`).join('')}</div>
-      <p class="small muted">Cocina sin sal añadida y aliña con aceite de oliva, limón, ajo y especias. Bebe agua en las comidas.</p></section>
-    <section class="card"><h3>Come a diario</h3><div class="chips">${FOOD_YES.map(f => `<span class="tag">${f}</span>`).join('')}</div>
-      <h3>Limita o evita</h3><div class="chips">${FOOD_NO.map(f => `<span class="tag no">${f}</span>`).join('')}</div></section>
+      <p class="small muted">Cocina sin sal añadida y aliña con aceite de oliva, limón, ajo y especias. Ajusta las cantidades a tus raciones.</p></section>
+    <section class="card"><h2>Dónde se esconde la sal</h2><p class="small muted">Gramos de sal por cada 100 g, valores aproximados. En la etiqueta, 1,25 g o más es mucha sal; 0,25 g o menos, poca.</p>
+      <table class="prog salt">${SALT.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table></section>
+    <section class="card"><h2>Cambios sencillos</h2><div class="list">${SWAPS.map(([a, b]) => `<div class="li"><div class="grow"><span class="small muted">En vez de ${a.toLowerCase()}</span><br><b>${b[0].toUpperCase() + b.slice(1)}</b></div></div>`).join('')}</div></section>
+    <section class="card"><h2>Lista de la compra</h2>${Object.entries(SHOP).map(([t, items]) => `<h3>${t}</h3><div class="chips">${items.map(f => `<span class="tag">${f}</span>`).join('')}</div>`).join('')}</section>
     <section class="card flat"><h3>Cinco reglas que más bajan la tensión</h3><ol class="small muted" style="margin:0;padding-left:20px;display:grid;gap:6px">
-      <li>Retira el salero y lee etiquetas: más de 1 g de sal por 100 g es mucho.</li><li>Cinco raciones de fruta y verdura al día (potasio).</li><li>Legumbres 3–4 veces por semana y pescado azul 2 veces.</li>
-      <li>Alcohol: cuanto menos, mejor. Lo ideal es cero.</li><li>${c.lose ? `Bajar a ${nf(c.goalKg)} kg (un 5 %) puede restar unos 5 mmHg.` : 'Mantén tu peso actual: está en rango saludable.'}</li></ol>
-      <p class="small muted">Si tienes enfermedad renal o tomas diuréticos, IECA o ARA-II, consulta antes de aumentar el potasio o usar sal baja en sodio.</p></section>`;
+      <li>Retira el salero y la pastilla de caldo; la mayor parte de la sal viene de alimentos procesados.</li><li>Fruta y verdura en todas las comidas: son tu fuente de potasio.</li><li>Legumbres 3–4 veces por semana y pescado azul 2 veces.</li>
+      <li>Alcohol: cuanto menos, mejor. Lo ideal es cero.</li><li>${c.lose ? `Bajar a ${nf(c.goalKg)} kg (un 5 %) ayuda: cada kilo perdido resta alrededor de 1 mmHg.` : 'Mantén tu peso actual: está en rango saludable.'}</li></ol>
+      <p class="small muted">Con enfermedad renal o si tomas diuréticos, IECA o ARA-II, consulta antes de aumentar el potasio o usar sal baja en sodio.</p>${vids('dash')}</section>`;
 }
 function vPlan() {
-  const seg = `<div class="seg" role="group" aria-label="Vista del plan">${[['dia', 'Día'], ['sem', 'Semana'], ['mes', 'Mes']].map(([k, t]) => `<button data-plan="${k}" aria-pressed="${planTab === k}">${t}</button>`).join('')}</div>`;
-  const R = S.rem, c = calc(), today = new Date();
+  const seg = `<div class="seg" role="group" aria-label="Vista del plan">${[['dia', 'Día'], ['sem', 'Semana'], ['mes', 'Programa']].map(([k, t]) => `<button data-plan="${k}" aria-pressed="${planTab === k}">${t}</button>`).join('')}</div>`;
+  const R = S.rem, c = calc(), today = new Date(), P0 = params();
   if (planTab === 'dia') {
-    const tasks = tasksFor(), rows = [];
+    const tasks = tasksFor(), rows = [], M = MENU[(today.getDay() + 6) % 7 + (Math.floor(Date.now() / 6048e5) % 2) * 7];
     if (R.bp.t1) rows.push([hm(R.bp.t1), 'Medir la tensión', 'Antes de desayunar y de la medicación, tras 5 minutos sentado.']);
-    rows.push([hm(R.bp.t1 || '08:00') + 20, 'Desayuno y primer vaso de agua', MENU[(today.getDay() + 6) % 7][0]]);
+    rows.push([hm(R.bp.t1 || '08:00') + 20, 'Desayuno y primer vaso de agua', M[0]]);
     rows.push([hm('11:00'), 'Pausa activa', 'Levántate cada hora: 2 minutos de paseo o estiramiento.']);
-    rows.push([hm('14:00'), 'Comida', MENU[(today.getDay() + 6) % 7][1]]);
+    rows.push([hm('14:00'), 'Comida', M[1]]);
+    rows.push([hm('17:00'), 'Merienda', M[2]]);
     rows.push([hm(R.ex.time), 'Sesión de ejercicio', tasks.map(t => `${EX[t.id].name} (${t.total} min)`).join(' + ')]);
-    if (R.bp.t2) rows.push([hm(R.bp.t2), 'Medir la tensión', 'Antes de cenar o al menos 30 minutos después del ejercicio.']);
-    rows.push([hm('21:00'), 'Cena ligera', MENU[(today.getDay() + 6) % 7][3]]);
+    if (R.bp.t2) rows.push([hm(R.bp.t2), 'Medir la tensión', 'Antes de cenar y al menos 30 minutos después del ejercicio.']);
+    rows.push([hm('21:00'), 'Cena ligera', M[3]]);
     rows.push([hm('23:00'), 'Dormir 7–8 horas', 'Dormir poco sube la tensión. Pantallas fuera 30 minutos antes.']);
     rows.sort((a, b) => a[0] - b[0]);
     return seg + `<section class="card"><h2>${DAYS_L[today.getDay()]}</h2><div class="tl">${rows.map(r => `<time>${fmtHM(r[0])}</time><div><b>${r[1]}</b><p class="small muted">${r[2]}</p></div>`).join('')}</div>
@@ -475,37 +592,47 @@ function vPlan() {
   }
   if (planTab === 'sem') {
     const s = weekStart(), w = weekStats(); let plan = 0;
-    const rows = Array.from({ length: 7 }, (_, i) => { const d = addDays(s, i), k = dkey(d), ts = tasksFor(d); ts.forEach(t => { if (t.id === 'walk' || t.id === 'bike') plan += t.total; });
-      return `<div class="wk ${k === dkey() ? 'today' : ''}"><div class="d">${DAYS[d.getDay()]}<br><span class="small muted">${d.getDate()}</span></div><div class="chips">${ts.map(t => `<span class="pill ${t.id in doneOn(k) ? 'good' : ''}">${t.id in doneOn(k) ? '✓ ' : ''}${SHORT[t.id]} · ${t.total}′</span>`).join('')}</div></div>`; }).join('');
-    return seg + `<section class="grid3"><div class="card flat"><p class="eyebrow">Aeróbico</p><b class="num" style="font-size:1.25rem">${w.aer}′</b><span class="small muted">plan: ${plan}′ · meta 150′</span></div>
+    const rows = Array.from({ length: 7 }, (_, i) => { const d = addDays(s, i), k = dkey(d), ts = tasksFor(d); ts.forEach(t => { if (AER.includes(t.id)) plan += t.total; });
+      return `<div class="wk ${k === dkey() ? 'today' : ''}"><div class="d">${DAYS[d.getDay()]}<br><span class="small muted">${d.getDate()}</span></div><div class="chips">${ts.map(t => `<span class="pill ${t.id in doneOn(k) ? 'good' : 'cat-' + EX[t.id].cat}">${t.id in doneOn(k) ? '✓ ' : ''}${SHORT[t.id]} · ${t.total}′</span>`).join('')}</div></div>`; }).join('');
+    return seg + `<section class="grid3"><div class="card flat"><p class="eyebrow">Aeróbico</p><b class="num" style="font-size:1.25rem">${w.aer}′</b><span class="small muted">plan ${plan}′ · meta 150′</span></div>
       <div class="card flat"><p class="eyebrow">Isométrico</p><b class="num" style="font-size:1.25rem">${w.iso}/3</b><span class="small muted">sesiones</span></div>
       <div class="card flat"><p class="eyebrow">Fuerza</p><b class="num" style="font-size:1.25rem">${w.str}/2</b><span class="small muted">sesiones</span></div></section>
-      <section class="card"><h2>Esta semana</h2><div>${rows}</div></section>`;
+      <section class="card"><div class="row"><h2 class="grow">Semana ${P0.w} de 12</h2><span class="pill brand">${PHASES[P0.ph][0]}</span></div><div>${rows}</div>
+      <p class="small muted">Isométricos en días alternos (lunes, miércoles y viernes), aeróbico repartido en 4–5 días y fuerza 2 días. El domingo es descanso activo.</p></section>`;
   }
-  const y = today.getFullYear(), mo = today.getMonth(), first = new Date(y, mo, 1), n = new Date(y, mo + 1, 0).getDate(), off = (first.getDay() + 6) % 7, pw = progWeek(), L = S.profile.level;
+  const y = today.getFullYear(), mo = today.getMonth(), first = new Date(y, mo, 1), n = new Date(y, mo + 1, 0).getDate(), off = (first.getDay() + 6) % 7, L = S.profile.level, wl = S.wlog || [];
   let cells = '', full = 0;
   for (let i = 0; i < off; i++) cells += '<i class="off"></i>';
-  for (let d = 1; d <= n; d++) { const dt = new Date(y, mo, d), k = dkey(dt), nd = Object.keys(doneOn(k)).length, tot = tasksFor(dt).length, cl = nd >= tot ? 'full' : nd ? 'part' : ''; if (cl === 'full') full++;
-    cells += `<i class="${cl} ${k === dkey() ? 'today' : ''}">${d}</i>`; }
-  return seg + `<section class="card"><div class="row"><h2 class="grow">${(m => m[0].toUpperCase() + m.slice(1))(today.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }))}</h2><span class="pill good">${full} días completos</span></div>
+  for (let d = 1; d <= n; d++) { const dt = new Date(y, mo, d), cl = dayState(dt); if (cl === 'full') full++; cells += `<i class="${cl} ${dkey(dt) === dkey() ? 'today' : ''}">${d}</i>`; }
+  const w0 = P0.ph * 4 + 1;
+  return seg + `<section class="card"><div class="row"><h2 class="grow">Programa de 12 semanas</h2><span class="pill brand">Semana ${P0.w}</span></div>
+      <div class="phases">${PHASES.map(([t, d], i) => `<div class="${i === P0.ph ? 'cur' : ''}"><b>${i + 1}. ${t}</b>Semanas ${i * 4 + 1}–${i * 4 + 4}</div>`).join('')}</div>
+      <p class="small muted">${PHASES[P0.ph][1]} Esta fase, la sentadilla va en ${DEPTH[P0.ph]}.</p>
+      <div class="scroll-x"><table class="prog"><tr><th>Semana</th><th>Isométrico</th><th>Aeróbico</th><th>Fuerza</th></tr>
+      ${[0, 1, 2, 3].map(i => w0 + i).map(w => `<tr class="${w === P0.w ? 'cur' : ''}"><td>${w}${w === P0.w ? ' · ahora' : ''}</td><td>4 × ${mmss(PROG.hold[L][w - 1])}</td><td>${PROG.aer[L][w - 1]} min</td><td>${PROG.rounds[L][w - 1]} ${PROG.rounds[L][w - 1] === 1 ? 'ronda' : 'rondas'}</td></tr>`).join('')}</table></div>
+      <p class="small muted">El plan se adapta: si valoras dos sesiones seguidas como duras, repite semana; si son fáciles, avanza. El efecto sobre la tensión suele verse entre las semanas 4 y 8 y se pierde si lo dejas.</p></section>
+    <section class="card"><div class="row"><h2 class="grow">${(m => m[0].toUpperCase() + m.slice(1))(today.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }))}</h2><span class="pill good">${full} días completos</span></div>
       <div class="cal">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<span>${d}</span>`).join('')}${cells}</div>
       <div class="legend"><span><i style="background:var(--good)"></i>Todo hecho</span><span><i style="background:var(--warn)"></i>Parte</span></div></section>
-    <section class="card"><h2>Progresión de 4 semanas</h2><div class="scroll-x"><table class="prog"><tr><th>Semana</th><th>Isométrico</th><th>Aeróbico</th><th>Fuerza</th></tr>
-      ${[1, 2, 3, 4].map(w => `<tr class="${w === pw ? 'cur' : ''}"><td>${w}${w === pw ? ' · ahora' : ''}</td><td>4 × ${mmss(PROG.hold[L][w - 1])}</td><td>${PROG.aer[L][w - 1]} min</td><td>${PROG.rounds[L][w - 1]} ${PROG.rounds[L][w - 1] === 1 ? 'ronda' : 'rondas'}</td></tr>`).join('')}</table></div>
-      <p class="small muted">Desde la semana 4 se mantiene la dosis. El efecto sobre la tensión suele notarse entre las semanas 4 y 8.</p></section>
+    <section class="card"><div class="row"><h2 class="grow">Peso</h2><span class="pill">${nf(S.profile.weight)} kg</span></div>
+      ${wl.length > 1 ? `<p>Desde ${new Date(wl[0].t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}: <b>${nf(wl[0].kg)} → ${nf(wl.at(-1).kg)} kg</b> (${wl.at(-1).kg - wl[0].kg > 0 ? '+' : ''}${nf(wl.at(-1).kg - wl[0].kg)} kg)</p>` : '<p class="small muted">Pésate el mismo día cada semana, en ayunas, y actualiza el peso para ver tu evolución.</p>'}
+      ${c.lose ? `<div class="bar"><i style="width:${clamp((wl[0]?.kg ?? S.profile.weight) > c.goalKg ? ((wl[0]?.kg ?? S.profile.weight) - S.profile.weight) / ((wl[0]?.kg ?? S.profile.weight) - c.goalKg) : 0, 0, 1) * 100}%"></i></div><p class="small muted">Objetivo: ${nf(c.goalKg)} kg, un 5 % menos, en unos 3 meses.</p>` : ''}
+      <form id="wform" class="row"><div class="field grow"><label for="w-kg">Peso de hoy (kg)</label><input id="w-kg" type="number" inputmode="decimal" step="0.1" min="35" max="250" required placeholder="${S.profile.weight}"></div><button class="btn" style="align-self:end" type="submit">Guardar</button></form></section>
     <section class="card flat"><h3>Objetivos del mes</h3><ul class="small muted" style="margin:0;padding-left:20px;display:grid;gap:6px">
-      <li>12 sesiones isométricas (3 por semana).</li><li>Llegar a 150 minutos aeróbicos semanales.</li><li>Una semana de medidas mañana y noche para enseñar a tu médico.</li>
-      ${c.lose ? `<li>Bajar 1–2 kg: de ${nf(S.profile.weight)} hacia ${nf(c.goalKg)} kg en unos 3 meses.</li>` : ''}<li>Revisar el peso el día 1 y actualizarlo en tu perfil.</li></ul></section>`;
+      <li>12 sesiones isométricas (3 por semana).</li><li>Llegar a 150 minutos aeróbicos semanales.</li><li>Una semana de control de tensión, mañana y noche, para enseñar a tu médico.</li>
+      ${c.lose ? '<li>Bajar entre 1 y 2 kg.</li>' : ''}<li>Cumplir las raciones DASH al menos 5 días por semana.</li></ul></section>`;
 }
 const TITLES = { hoy: 'Pulso Sano', ej: 'Ejercicios', bp: 'Tensión', dieta: 'Alimentación', plan: 'Tu plan' };
 function render() {
   const app = $('#app');
   if (!S.profile) { $('.nav').hidden = true; app.innerHTML = vOnb(); return; }
   $('.nav').hidden = false;
-  const view = { hoy: vHoy, ej: vEj, bp: vBP, dieta: vDieta, plan: vPlan }[tab]();
-  app.innerHTML = `<header class="top"><div class="grow"><p class="eyebrow">${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h1>${TITLES[tab]}</h1></div>
-    <button class="iconbtn" data-act="rem" aria-label="Avisos">${I.bell}</button><button class="iconbtn" data-act="profile" aria-label="Perfil">${I.user}</button></header><main class="view">${view}</main>`;
-  $$('.nav button').forEach(b => b.toggleAttribute('aria-current', false) || (b.dataset.tab === tab && b.setAttribute('aria-current', 'page')));
+  const view = { hoy: vHoy, ej: vEj, bp: vBP, dieta: vDieta, plan: vPlan }[tab](), p = S.profile, h = new Date().getHours();
+  const hi = h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
+  app.innerHTML = `<header class="top"><button class="avatar" data-act="profile" aria-label="Perfil">${esc((p.name || 'P')[0].toUpperCase())}</button>
+    <div class="grow"><p class="eyebrow">${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h1>${tab === 'hoy' ? `${hi}${p.name ? ', ' + esc(p.name) : ''}` : TITLES[tab]}</h1></div>
+    <button class="iconbtn" data-act="rem" aria-label="Avisos">${I.bell}</button></header><main class="view">${view}</main>`;
+  $$('.nav button').forEach(b => { b.removeAttribute('aria-current'); if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); });
   if (tab === 'bp') wireChart();
 }
 
@@ -543,12 +670,20 @@ function sheet(title, html) {
 }
 const closeSheet = () => $('#scrim')?.remove();
 function openEx(id, min) {
-  const e = EX[id], total = exMin(id, min), bp = lastBP(), iso = e.kind === 'Isométrico';
-  sheet(e.name, `<div class="card"><div style="height:200px;color:var(--brand)">${fig(e.anim)}</div><div class="row wrap"><span class="pill brand">${e.kind}</span><span class="pill">${total} min</span></div><p>${e.why}</p></div>
-    <div class="card flat"><h3>Cómo se hace</h3><ol style="margin:0;padding-left:20px;display:grid;gap:6px">${e.steps.map(s => `<li>${s}</li>`).join('')}</ol><div class="note">${e.safe}</div></div>
-    ${iso && bp && (bp.s >= 160 || bp.d >= 100) ? `<div class="note crit"><b>Tu última tensión fue ${bp.s}/${bp.d}.</b> Los isométricos la suben durante el esfuerzo. Con valores de 160/100 o más, habla con tu médico antes de hacerlos y elige hoy caminar o respirar.</div>` : ''}
+  const e = EX[id], total = exMin(id, min), bp = lastBP(), iso = e.cat === 'iso', p = params();
+  sheet(e.name, `<div class="card"><div class="cat-${e.cat}" style="height:200px;border-radius:14px">${fig(e.anim)}</div><div class="row wrap" style="gap:6px"><span class="pill cat-${e.cat}">${CAT[e.cat]}</span><span class="pill">${total} min</span>${e.ref ? `<span class="pill">${e.fx} sistólica</span>` : ''}</div><p>${e.why}</p>${e.ref ? src(e.ref) : ''}</div>
+    <div class="card flat"><h3>Cómo se hace</h3><ol style="margin:0;padding-left:20px;display:grid;gap:6px">${e.steps.map(s => `<li>${s}</li>`).join('')}</ol>
+      ${id === 'wallsit' ? `<div class="note"><b>Tu sesión de hoy:</b> 4 × ${mmss(p.hold)} en ${DEPTH[p.ph]}.</div>` : ''}${id === 'iwalk' ? `<div class="note"><b>Tu sesión de hoy:</b> ${p.sets} bloques de 3 + 3 minutos.</div>` : ''}
+      <div><p class="lbl">Esfuerzo que debes notar: ${e.rpe[0] === e.rpe[1] ? e.rpe[0] : e.rpe[0] + '–' + e.rpe[1]} sobre 10</p><div class="rpe" aria-hidden="true">${Array.from({ length: 10 }, (_, i) => `<i class="${i + 1 >= e.rpe[0] && i + 1 <= e.rpe[1] ? 'on' : ''}"></i>`).join('')}</div></div>
+      <div class="note">${e.safe}</div></div>
+    ${iso && bp && (bp.s >= 160 || bp.d >= 100) ? `<div class="note crit"><b>Tu última tensión fue ${bp.s}/${bp.d}.</b> Los isométricos la suben durante el esfuerzo. Con 160/100 o más, habla con tu médico antes de hacerlos y elige hoy caminar o respirar.</div>` : ''}
+    ${VID[id] ? `<div class="card flat"><h3>Vídeos para ver la técnica</h3>${vids(id)}<a class="src" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.name)}" target="_blank" rel="noopener">Buscar más en YouTube</a></div>` : ''}
     ${e.gps ? `<label class="row card flat" style="flex-direction:row"><input type="checkbox" class="switch" id="use-gps" checked><span class="grow">Medir recorrido con GPS<br><span class="small muted">Suma los kilómetros a tu día. Mantén la pantalla encendida.</span></span></label>` : ''}
     <button class="btn block" data-start="${id}" data-min="${min || ''}">${I.play} Empezar</button>`);
+}
+function openRefs() {
+  sheet('Fuentes', `<div class="card"><p class="small muted">El contenido de la app se apoya en estas publicaciones. Los vídeos enlazados son de terceros y sirven para ver la técnica.</p><div class="list">${Object.values(REF).map(([t, u]) => `<div class="li"><a class="src grow" href="${u}" target="_blank" rel="noopener">${t}</a></div>`).join('')}</div></div>
+    <p class="small muted">Orientación general. No sustituye el consejo de tu médico, sobre todo si tomas medicación o tu tensión supera 160/100.</p>`);
 }
 function openBP() {
   const now = new Date(), local = `${dkey(now)}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -568,8 +703,8 @@ function openProfile() {
       <div class="card flat"><p class="eyebrow">Zona 2</p><b class="num" style="font-size:1.25rem">${c.z2[0]}–${c.z2[1]}</b><span class="small muted">lpm</span></div></div>
     <form id="pform" class="card">${profileForm(S.profile)}<button class="btn block" type="submit">Guardar cambios</button></form>
     <div class="card flat"><label class="row"><input type="checkbox" class="switch" id="snd" ${S.sound ? 'checked' : ''}><span class="grow">Sonidos en ejercicios y avisos</span></label>
-      <button class="btn line" data-act="restart">Reiniciar la progresión de 4 semanas</button><button class="btn danger" data-act="wipe">Borrar todos mis datos</button></div>
-    <p class="small muted">Orientación general basada en guías de hipertensión (ESH 2023), dieta DASH y recomendaciones de actividad de la OMS. No sustituye el consejo de tu médico.</p>`);
+      <button class="btn line" data-act="restart">Reiniciar el programa de 12 semanas</button><button class="btn danger" data-act="wipe">Borrar todos mis datos</button></div>
+    <button class="btn ghost" data-act="refs">Ver fuentes científicas</button><p class="small muted">Orientación general. No sustituye el consejo de tu médico.</p>`);
 }
 function openRem() {
   const R = S.rem, perm = canNotify() ? Notification.permission : 'none';
@@ -595,10 +730,10 @@ function startEx(id, min, useGps) {
   const e = EX[id], phases = [{ label: 'Prepárate', secs: 8, type: 'prep', anim: e.build(params(), min)[0].anim, sub: e.name }, ...e.build(params(), min)];
   P = { id, e, phases, i: 0, left: phases[0].secs, endAt: 0, running: false, began: Date.now(), active: 0, lastBeep: -1, gps: null, km: 0, last: null, watch: null };
   const el = document.createElement('div'); el.className = 'player'; el.id = 'player';
-  el.innerHTML = `<div class="head"><div class="grow"><p class="eyebrow">${e.kind}</p><h3>${e.name}</h3></div><button class="iconbtn" data-p="snd" aria-label="Sonido"></button><button class="iconbtn" data-p="exit" aria-label="Salir">${I.x}</button></div>
+  el.innerHTML = `<div class="head"><div class="grow"><p class="eyebrow">${CAT[e.cat]}</p><h3>${e.name}</h3></div><button class="iconbtn" data-p="snd" aria-label="Sonido"></button><button class="iconbtn" data-p="exit" aria-label="Salir">${I.x}</button></div>
     <div class="dots">${phases.map(() => '<i></i>').join('')}</div>
     <div class="stage">${ringSVG(0, 100).replace('width="100" height="100"', '')}<svg class="fig" viewBox="0 0 200 200" aria-hidden="true"></svg></div>
-    <div><p class="phase" aria-live="polite"></p><p class="small muted sub"></p></div><div class="clock" role="timer"></div><p class="cue"></p>
+    <div><p class="phase" aria-live="polite"></p><p class="small muted sub"></p></div><div class="clock" role="timer"></div><p class="cue"></p><p class="next"></p>
     ${useGps ? '<div class="gps"><div><b id="g-km">0,00</b><span class="small muted">km</span></div><div><b id="g-pace">—</b><span class="small muted">min/km</span></div><div><b id="g-st">…</b><span class="small muted">GPS</span></div></div>' : ''}
     <div class="ctl"><button class="btn ghost" data-p="done">Terminar</button><button class="main" data-p="toggle" aria-label="Iniciar o pausar"></button><button class="btn ghost" data-p="skip" aria-label="Saltar fase">${I.skip}</button></div>`;
   document.body.append(el);
@@ -627,8 +762,10 @@ function pDraw() {
   else if (ph.type === 'prep') cue = P.e.safe;
   else if (ph.type === 'rest') cue = 'Respira hondo y suelta los hombros.';
   else if (P.e.cues.length) cue = P.e.cues[Math.floor((ph.secs - P.left) / 12) % P.e.cues.length];
-  if ((P.id === 'walk' || P.id === 'bike') && ph.type === 'work') { const z = calc().z2; cue += ` · ${z[0]}–${z[1]} lpm`; }
+  if ((P.id === 'walk' || P.id === 'bike') && ph.type === 'work' && ph.secs > 60) { const z = calc().z2; cue += ` · ${z[0]}–${z[1]} lpm`; }
   $('.cue', el).textContent = cue;
+  const rest = P.left + P.phases.slice(P.i + 1).reduce((a, x) => a + x.secs, 0), nx = P.phases[P.i + 1];
+  $('.next', el).textContent = `Quedan ${Math.ceil(rest / 60)} min${nx ? ' · después: ' + nx.label : ''}`;
   if (P.watch != null) { $('#g-km').textContent = nf(P.km, 2); const mins = P.active / 60; $('#g-pace').textContent = P.km > .05 ? nf(mins / P.km, 1) : '—'; }
 }
 let wakeLock = null;
@@ -667,6 +804,7 @@ function pFinish(complete) {
     <div style="width:150px;height:150px;color:var(--brand)">${fig('st_up')}</div><h1>${complete ? '¡Sesión completada!' : 'Sesión guardada'}</h1>
     <p class="muted">${e.name} · ${mins} min${km > 0 ? ` · ${nf(km, 2)} km` : ''}</p>
     <div class="grid2" style="width:100%"><div class="card flat"><p class="eyebrow">Semana</p><b class="num" style="font-size:1.3rem">${w.aer}/150′</b><span class="small muted">aeróbico</span></div><div class="card flat"><p class="eyebrow">Racha</p><b class="num" style="font-size:1.3rem">${streak()}</b><span class="small muted">días seguidos</span></div></div>
+    ${e.cat === 'relax' || e.cat === 'mov' ? '' : `<div style="width:100%" id="ratebox"><p class="lbl" style="margin-bottom:8px">¿Cómo te ha resultado?</p><div class="seg">${[['easy', 'Fácil'], ['ok', 'Adecuado'], ['hard', 'Duro']].map(([v, t]) => `<button data-rate="${v}" aria-pressed="false">${t}</button>`).join('')}</div></div>`}
     <p class="small muted">Bebe un vaso de agua. Si quieres medir tu tensión, espera 30 minutos en reposo.</p>
     <button class="btn block" data-p="exit">Hecho</button><button class="btn ghost block" data-p="water">${I.plus} Apuntar un vaso de agua</button></div>`;
 }
@@ -704,8 +842,15 @@ document.addEventListener('click', e => {
   if (d.start) return startEx(d.start, +d.min || undefined, !!$('#use-gps')?.checked);
   if (d.toggle) { const k = dkey(); if (d.toggle in doneOn(k)) { delete S.done[k][d.toggle]; save(); } else { setDone(d.toggle, +d.total); beep(880, .12); buzz(60); } return render(); }
   if (d.range != null) { bpRange = +d.range; return render(); }
+  if (d.excat) { exCat = d.excat; return render(); }
+  if (d.dweek != null) { dietDay = dietDay % 7 + 7 * +d.dweek; return render(); }
+  if (d.srv) { const k = dkey(); (S.dash[k] ||= {})[d.srv] = clamp((S.dash[k][d.srv] || 0) + +d.n, 0, 12); save(); return render(); }
+  if (d.rate) { $$('#ratebox button').forEach(b => b.setAttribute('aria-pressed', b === t));
+    const r = S.run && S.run.v === d.rate ? S.run.n + 1 : 1; S.run = { v: d.rate, n: r };
+    if (r >= 2 && d.rate !== 'ok') { S.adj = (S.adj || 0) + (d.rate === 'easy' ? 1 : -1); S.run = null; toast(d.rate === 'easy' ? 'Dos sesiones fáciles: adelantamos una semana del programa.' : 'Dos sesiones duras: repetimos semana para consolidar.'); }
+    return save(); }
   if (d.plan) { planTab = d.plan; return render(); }
-  if (d.dday != null) { dietDay = +d.dday; return render(); }
+  if (d.dday != null) { dietDay = +d.dday + (dietDay >= 7 ? 7 : 0); return render(); }
   if (d.del) { S.bp = S.bp.filter(x => String(x.t) !== d.del); save(); return render(); }
   if (d.remday != null) { const a = S.rem.ex.days, v = +d.remday; S.rem.ex.days = a.includes(v) ? a.filter(x => x !== v) : [...a, v]; t.setAttribute('aria-pressed', S.rem.ex.days.includes(v)); return save(); }
   if (d.p) {
@@ -721,6 +866,7 @@ document.addEventListener('click', e => {
     case 'bp-add': return openBP();
     case 'rem': return openRem();
     case 'profile': return openProfile();
+    case 'refs': return openRefs();
     case 'water': { const k = dkey(), c = calc(), before = S.water[k] || 0; S.water[k] = Math.max(0, before + +d.ml); save(); if (before < c.water && S.water[k] >= c.water) toast('Objetivo de agua cumplido.'); return render(); }
     case 'km': { const k = dkey(); S.km[k] = Math.max(0, Math.round(((S.km[k] || 0) + +d.km) * 100) / 100); save(); return render(); }
     case 'perm': return Notification.requestPermission().then(() => openRem()).catch(() => openRem());
@@ -728,7 +874,7 @@ document.addEventListener('click', e => {
     case 'ics': download('pulso-sano-avisos.ics', ics(), 'text/calendar'); return toast('Abre el archivo descargado para añadir los avisos a tu calendario.');
     case 'bp-csv': { const csv = 'fecha;hora;sistolica;diastolica;pulso;nota\n' + bpSorted().map(x => { const dt = new Date(x.t); return [dkey(dt), `${pad(dt.getHours())}:${pad(dt.getMinutes())}`, x.s, x.d, x.p || '', (x.n || '').replace(/;/g, ',')].join(';'); }).join('\n');
       download('tension.csv', csv, 'text/csv'); navigator.clipboard?.writeText(csv).then(() => toast('Historial descargado y copiado al portapapeles.'), () => {}); return; }
-    case 'restart': S.profile.start = dkey(); save(); closeSheet(); toast('Progresión reiniciada en la semana 1.'); return render();
+    case 'restart': S.profile.start = dkey(); S.adj = 0; S.run = null; save(); closeSheet(); toast('Progresión reiniciada en la semana 1.'); return render();
     case 'wipe': if (confirmKey !== 'wipe') { confirmKey = 'wipe'; t.textContent = 'Pulsa otra vez para borrar todo'; return; }
       confirmKey = null; S = structuredClone(DEF); save(); closeSheet(); tab = 'hoy'; return render();
   }
@@ -736,7 +882,8 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target;
-  if (f.id === 'onb' || f.id === 'pform') { const p = readProfile(f); if (!p) return; S.profile = Object.assign({ start: dkey() }, S.profile || {}, p); save(); closeSheet(); render(); if (f.id === 'onb') { toast('Plan creado. Activa los avisos en la campana.'); } return; }
+  if (f.id === 'wform') { const kg = +$('#w-kg').value; if (!(kg >= 35 && kg <= 250)) return toast('Revisa el peso.'); if (!S.wlog.length) S.wlog.push({ t: new Date(S.profile.start).getTime(), kg: S.profile.weight }); S.wlog.push({ t: Date.now(), kg }); S.profile.weight = kg; save(); toast('Peso guardado.'); return render(); }
+  if (f.id === 'onb' || f.id === 'pform') { const p = readProfile(f); if (!p) return; if (S.profile && p.weight !== S.profile.weight) { if (!S.wlog.length) S.wlog.push({ t: new Date(S.profile.start).getTime(), kg: S.profile.weight }); S.wlog.push({ t: Date.now(), kg: p.weight }); } S.profile = Object.assign({ start: dkey() }, S.profile || {}, p); save(); closeSheet(); render(); if (f.id === 'onb') { toast('Plan creado. Activa los avisos en la campana.'); } return; }
   if (f.id === 'bpform') {
     const s = +$('#bp-s').value, d = +$('#bp-d').value, p = +$('#bp-p').value || null, t = new Date($('#bp-t').value).getTime() || Date.now();
     if (!(s >= 60 && s <= 260 && d >= 30 && d <= 160) || d >= s) return toast('Revisa los valores: la sistólica debe ser mayor que la diastólica.');
