@@ -738,6 +738,42 @@ const LOGO = '<svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentC
 const GBTN = lbl => sb ? `<button class="btn gbtn" data-act="login"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.2c0-.8-.1-1.5-.2-2.2H12v4.200h5.900a5 5 0 0 1-2.200 3.300v2.700h3.600c2.100-1.900 3.200-4.800 3.200-8z"/><path fill="#34A853" d="M12 23c3 0 5.500-1 7.300-2.700l-3.600-2.700c-1 .7-2.300 1.100-3.700 1.100-2.900 0-5.300-1.900-6.200-4.500H2.100v2.800A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.800 14.100a6.600 6.600 0 0 1 0-4.200V7.100H2.100a11 11 0 0 0 0 9.800z"/><path fill="#EA4335" d="M12 5.400c1.600 0 3.100.6 4.200 1.600l3.200-3.200A11 11 0 0 0 2.100 7.100l3.700 2.800C6.700 7.300 9.100 5.400 12 5.400z"/></svg>${lbl}</button>`
   : '<div class="note warn">Necesitas conexión a internet para acceder. Comprueba la red y vuelve a abrir la app.</div>';
 const vSplash = msg => `<div class="splash">${LOGO}<p class="muted">${msg}</p></div>`;
+function landGuide() {
+  const d = (t, body, open) => `<details class="acc" ${open ? 'open' : ''}><summary>${t}</summary><div class="accb">${body}</div></details>`;
+  const tb = (head, rows) => `<div class="scroll-x"><table class="prog"><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map((c, i) => `<td>${i ? c : `<b>${c}</b>`}</td>`).join('')}</tr>`).join('')}</table></div>`;
+  return `<section class="card"><h2>Guía rápida de la tensión</h2>
+    ${d('¿Qué tensión es correcta?', `<p class="small muted">Los valores normales son los mismos a cualquier edad adulta. Se mide en consulta, en reposo; manda la cifra más alta de las dos.</p>
+      ${tb(['Categoría', 'Sistólica', 'Diastólica'], [['Óptima', 'menos de 120', 'menos de 80'], ['Normal', '120–129', '80–84'], ['Normal-alta', '130–139', '85–89'], ['Hipertensión grado 1', '140–159', '90–99'], ['Hipertensión grado 2', '160–179', '100–109'], ['Hipertensión grado 3', '180 o más', '110 o más']])}
+      <p class="small muted">En casa los límites son más bajos: una media de <b>135/85 o más</b> ya se considera hipertensión. Una tensión por debajo de 90/60 con mareo también merece consulta.</p>`, true)}
+    ${d('Objetivo según tu edad', `<p class="small muted">Lo que cambia con la edad no es lo normal, sino hasta dónde conviene bajarla cuando hay tratamiento. Objetivos habituales en consulta según la guía europea de hipertensión de 2023:</p>
+      ${tb(['Edad', 'Objetivo'], [['18–64 años', 'por debajo de 130/80'], ['65–79 años', 'por debajo de 140/80, y menos si se tolera bien'], ['80 años o más', 'sistólica entre 140 y 150']])}
+      <p class="small muted">La guía de cardiología de 2024 propone ir más lejos, a 120–129 de sistólica, si se tolera sin mareos. El objetivo concreto lo fija tu médico según tu salud.</p>`)}
+    ${d('Cómo medir la tensión correctamente', `<ol class="lsteps small"><li><b>Antes:</b> 30 minutos sin café, tabaco, alcohol ni ejercicio. Vejiga vacía.</li><li><b>Postura:</b> sentado 5 minutos, espalda apoyada, pies en el suelo y piernas sin cruzar.</li>
+      <li><b>Brazo:</b> manguito sobre la piel, dos dedos por encima del codo, y el brazo apoyado a la altura del corazón.</li><li><b>Durante:</b> sin hablar ni moverte.</li><li><b>Dos medidas</b> separadas un minuto; anota la segunda.</li>
+      <li><b>Siempre igual:</b> misma hora y mismo brazo, por la mañana antes de la medicación y por la noche antes de cenar.</li></ol>
+      <p class="small muted">Errores que suben la cifra: manguito pequeño o sobre la ropa, brazo colgando, piernas cruzadas, hablar o medir justo al llegar. Mejor un tensiómetro de brazo validado que uno de muñeca.</p>${vids('bp')}`)}
+    ${d('¿Cuándo conviene perder peso?', `<p class="small muted">Cuando el índice de masa corporal (IMC) es de 25 o más, o cuando la cintura supera el límite aunque el peso parezca normal.</p>
+      <div class="grid3"><div class="field"><label for="l-kg">Peso (kg)</label><input id="l-kg" type="number" inputmode="decimal" min="35" max="250" placeholder="80"></div><div class="field"><label for="l-cm">Altura (cm)</label><input id="l-cm" type="number" inputmode="numeric" min="120" max="230" placeholder="170"></div>
+        <div class="field"><span class="lbl">Tu IMC</span><div class="note" id="l-out" style="min-height:48px;display:grid;place-items:center;font-weight:700">—</div></div></div><p class="small" id="l-msg" role="status"></p>
+      ${tb(['IMC', 'Significa', 'Qué hacer'], [['Menos de 18,5', 'Peso bajo', 'Consulta; no bajes más'], ['18,5–24,9', 'Peso saludable', 'Mantener'], ['25–29,9', 'Sobrepeso', 'Bajar un 5 % ya ayuda'], ['30 o más', 'Obesidad', 'Bajar un 5–10 % con apoyo médico']])}
+      ${tb(['Cintura', 'Riesgo aumentado', 'Riesgo alto'], [['Hombres', 'más de 94 cm', 'más de 102 cm'], ['Mujeres', 'más de 80 cm', 'más de 88 cm']])}
+      <p class="small muted">La cintura se mide de pie, a la altura del ombligo, sin apretar. Perder peso baja la tensión de forma proporcional: como orientación, alrededor de 1 mmHg por cada kilo.</p>`)}
+    ${d('Consejos que más ayudan', `<ul class="lsteps small"><li><b>Muévete casi todos los días.</b> 150 minutos de ejercicio aeróbico por semana y 3 sesiones de isométricos.</li><li><b>Menos sal.</b> Por debajo de 5 g al día; la mayor parte viene de procesados, embutidos, quesos curados y pan.</li>
+      <li><b>Más potasio natural.</b> Fruta, verdura y legumbres a diario, salvo enfermedad renal.</li><li><b>Alcohol, cuanto menos mejor.</b> Lo ideal es cero.</li><li><b>No fumes.</b> Cada cigarrillo sube la tensión y daña las arterias.</li>
+      <li><b>Duerme 7–8 horas.</b> Si roncas mucho y te levantas cansado, coméntalo: la apnea del sueño sube la tensión.</li><li><b>Café con moderación</b> y nunca antes de medirte.</li><li><b>Toma la medicación como te la pautaron.</b> El ejercicio y la dieta suman, no la sustituyen. No la dejes por tu cuenta aunque las cifras mejoren.</li>
+      <li><b>Cuidado con algunos fármacos.</b> Antiinflamatorios como el ibuprofeno, descongestivos nasales y el regaliz pueden subirla.</li></ul>`)}
+    ${d('Cuándo pedir ayuda urgente', `<p class="small muted"><b>Llama al 112</b> si con la tensión alta notas dolor opresivo en el pecho, falta de aire, debilidad o adormecimiento en un lado del cuerpo, dificultad para hablar, visión borrosa o un dolor de cabeza brusco e intenso.</p>
+      <p class="small muted">Con 180/110 o más y sin síntomas: siéntate, descansa 5 minutos y repite. Si sigue igual, contacta con tu centro de salud ese mismo día.</p>`)}
+  </section>`;
+}
+function bmiCalc() {
+  const kg = +$('#l-kg')?.value, cm = +$('#l-cm')?.value, out = $('#l-out'), msg = $('#l-msg'); if (!out) return;
+  if (!(kg >= 35 && kg <= 250 && cm >= 120 && cm <= 230)) { out.textContent = '—'; msg.textContent = ''; return; }
+  const b = kg / (cm / 100) ** 2, ok = Math.round(24.9 * (cm / 100) ** 2);
+  out.textContent = nf(b);
+  msg.textContent = b < 18.5 ? 'Peso bajo. No necesitas perder peso; coméntalo con tu médico.' : b < 25 ? 'Peso saludable. Tu objetivo es mantenerlo.'
+    : `${b < 30 ? 'Sobrepeso' : 'Obesidad'}. Un primer objetivo razonable es bajar un 5 %: unos ${nf(kg * .05)} kg, hasta ${nf(kg * .95)} kg. El peso saludable para tu altura llega hasta unos ${ok} kg.`;
+}
 function vLanding() {
   const feat = (cat, anim, t, d) => `<div class="feat"><div class="figbox cat-${cat}">${fig(anim)}</div><div><h3>${t}</h3><p class="small muted">${d}</p></div></div>`;
   return `<div class="land">
@@ -754,6 +790,7 @@ function vLanding() {
       ${feat('aer', 'march', 'Avisos a tu hora', 'Te recuerda el ejercicio, el agua, medir la tensión y tu recorrido diario.')}</section>
     <section class="card"><h2>Cómo empezar</h2><ol class="lsteps"><li><b>Accede con Google.</b> Tus datos quedan guardados en tu cuenta y los tendrás en cualquier dispositivo.</li>
       <li><b>Cuéntanos sobre ti.</b> Sexo, edad, peso, altura y cuánto te mueves ahora.</li><li><b>Sigue el plan de hoy.</b> Dos o tres tareas cortas al día; la app guía cada sesión.</li></ol>${GBTN('Acceder con Google')}</section>
+    ${landGuide()}
     <section class="card flat"><h3>Con base científica</h3><p class="small muted">El contenido sigue un metaanálisis de 270 ensayos sobre ejercicio y tensión (Br J Sports Med, 2023), el plan DASH de los Institutos Nacionales de Salud de EE. UU. y la guía europea de hipertensión de 2024.</p>
       <p class="small muted">Pulso Sano orienta, no sustituye a tu médico. Si tu tensión supera 160/100, tienes una enfermedad del corazón o tomas medicación, consulta antes de empezar.</p></section>
     <p class="small muted" style="text-align:center">Tus datos son privados: solo tu cuenta puede leerlos y puedes borrarlos cuando quieras.</p></div>`;
@@ -1025,6 +1062,7 @@ document.addEventListener('change', e => {
   if (t.dataset.rem) { const [a, b] = t.dataset.rem.split('.'); S.rem[a][b] = t.type === 'checkbox' ? t.checked : t.tagName === 'SELECT' ? +t.value : t.value; save(); }
   if (t.id === 'snd') { S.sound = t.checked; save(); }
 });
+document.addEventListener('input', e => { if (e.target.id === 'l-kg' || e.target.id === 'l-cm') bmiCalc(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (user && !P) cloudPull(); if (P?.running) navigator.wakeLock?.request('screen').then(w => { wakeLock = w; }).catch(() => {}); if (!P && !$('#scrim')) render(); } });
 
