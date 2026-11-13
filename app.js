@@ -34,7 +34,7 @@ const I = {
 /* ---------- Estado ---------- */
 const KEY = 'pulsosano.v1';
 const DEF = {
-  profile: null, bp: [], done: {}, water: {}, km: {}, dash: {}, swap: {}, wlog: [], adj: 0, run: null, fired: {}, sound: true,
+  profile: null, bp: [], done: {}, water: {}, km: {}, dash: {}, swap: {}, excl: [], wlog: [], adj: 0, run: null, fired: {}, sound: true,
   rem: {
     ex: { on: true, time: '18:30', days: [1, 2, 3, 4, 5, 6, 0] },
     water: { on: true, from: '08:30', to: '21:00', every: 90 },
@@ -234,13 +234,26 @@ function tasksFor(date = new Date(), w, raw) {
     1: [[iso], ['walk', short]], 2: [[aer2, p.aer], ['breath']], 3: [[iso], ['strength']], 4: [['bike', p.aer], ['stretch']],
     5: [[iso], ['walk', short]], 6: [sat, ['strength']], 0: [['taichi'], ['walk', Math.max(15, short)], ['stretch']],
   }[date.getDay()];
-  const sw = raw ? {} : (S.swap || {})[dkey(date)] || {};
-  return plan.map(([id, min]) => {
-    const base = { id, min, total: exMin(id, min, p.w) }, to = sw[id];
-    if (!to || !EX[to]) return base;
-    const m = EX[to].cat === 'aer' ? clamp(Math.round(base.total / 5) * 5, 10, 60) : undefined;
-    return { id: to, min: m, total: exMin(to, m, p.w), orig: id };
-  });
+  const sw = raw ? {} : (S.swap || {})[dkey(date)] || {}, ex = S.excl || [], ids = plan.map(x => x[0]), out = [];
+  const subst = (b, to) => { const m = EX[to].cat === 'aer' ? clamp(Math.round(b.total / 5) * 5, 10, 60) : undefined; return { id: to, min: m, total: exMin(to, m, p.w) }; };
+  for (const [id, min] of plan) {
+    let t = { id, min, total: exMin(id, min, p.w) };
+    if (ex.includes(id)) { /* quitado para siempre: entra su mejor sustituto disponible, o nada */
+      const to = ALT[id].find(a => !ex.includes(a) && !(knee && a === 'wallsit') && !ids.includes(a) && !out.some(o => o.id === a));
+      if (!to) continue;
+      t = subst(t, to);
+    }
+    const d = sw[t.id];
+    if (d && EX[d] && !out.some(o => o.id === d)) t = Object.assign(subst(t, d), { orig: t.id });
+    out.push(t);
+  }
+  return out;
+}
+function exclNote() {
+  const ex = S.excl || [], noAer = AER.every(a => ex.includes(a)), noIso = ['wallsit', 'grip'].every(a => ex.includes(a)) || (S.profile.knee && ex.includes('grip'));
+  return noAer ? '<span style="color:var(--serious)">Has quitado todos los aeróbicos: el plan pierde su base. Deja al menos uno, por ejemplo la marcha en casa.</span>'
+    : noIso ? '<span style="color:var(--warn)">Sin isométricos el plan pierde el ejercicio que más baja la tensión. Si puedes, deja el apretón de mano.</span>'
+    : ex.length ? `Quitados: ${ex.map(i => SHORT[i].toLowerCase()).join(', ')}. En su lugar entra el ejercicio más parecido.` : 'Todos los ejercicios están en tu plan.';
 }
 const doneOn = k => S.done[k] || {};
 function setDone(id, minutes, k = dkey()) { (S.done[k] ||= {})[id] = minutes; save(); }
@@ -705,7 +718,7 @@ function openSwap(orig) {
   const k = dkey(), today = tasksFor(), cur = today.find(t => (t.orig || t.id) === orig), base = tasksFor(new Date(), undefined, true).find(t => t.id === orig);
   if (!cur || !base) return;
   const used = today.filter(t => t !== cur).map(t => t.id), bp = lastBP(), hiBP = bp && (bp.s >= 160 || bp.d >= 100);
-  const opts = [orig, ...ALT[orig]].filter(id => id !== cur.id && !used.includes(id) && !(S.profile.knee && id === 'wallsit') && !(hiBP && EX[id].cat === 'iso' && id !== orig));
+  const opts = [orig, ...ALT[orig]].filter(id => id !== cur.id && !used.includes(id) && !(S.excl || []).includes(id) && !(S.profile.knee && id === 'wallsit') && !(hiBP && EX[id].cat === 'iso' && id !== orig));
   const row = id => { const e = EX[id], m = EX[id].cat === 'aer' ? clamp(Math.round(base.total / 5) * 5, 10, 60) : undefined, back = id === orig;
     return `<button class="task" data-swapto="${id}" data-orig="${orig}" style="text-align:left;width:100%"><div class="figbox cat-${e.cat}">${fig(e.anim, false)}</div><div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${back ? base.total : exMin(id, m)} min</span><br><span class="small" style="color:var(--${back || sameKind(orig, id) ? 'good' : 'warn'})">${back ? 'Volver al plan original' : swapNote(orig, id)}</span></div></button>`; };
   sheet('Cambiar ejercicio', `<p class="muted">Hoy tocaba <b>${EX[orig].name.toLowerCase()}</b> (${base.total} min). Elige con qué sustituirlo; el cambio vale solo para hoy.</p>
@@ -733,6 +746,8 @@ function openProfile() {
       <div class="card flat"><p class="eyebrow">FC máx.</p><b class="num" style="font-size:1.25rem">${c.fcm}</b><span class="small muted">lpm estimada</span></div>
       <div class="card flat"><p class="eyebrow">Zona 2</p><b class="num" style="font-size:1.25rem">${c.z2[0]}–${c.z2[1]}</b><span class="small muted">lpm</span></div></div>
     <form id="pform" class="card">${profileForm(S.profile)}<button class="btn block" type="submit">Guardar cambios</button></form>
+    <div class="card"><h3>Ejercicios de mi plan</h3><p class="small muted">Desmarca los que no puedas o no quieras hacer nunca. El plan los sustituye por el más parecido, todos los días.</p>
+      <div class="chips" role="group" aria-label="Ejercicios de mi plan">${Object.keys(EX).map(id => `<button class="chip" data-excl="${id}" aria-pressed="${!(S.excl || []).includes(id)}">${SHORT[id]}</button>`).join('')}</div><p class="small muted" id="excl-note">${exclNote()}</p></div>
     <div class="card flat"><label class="row"><input type="checkbox" class="switch" id="snd" ${S.sound ? 'checked' : ''}><span class="grow">Sonidos en ejercicios y avisos</span></label>
       <button class="btn line" data-act="restart">Reiniciar el programa de 12 semanas</button><button class="btn danger" data-act="wipe">Borrar todos mis datos</button></div>
     <button class="btn ghost" data-act="refs">Ver fuentes científicas</button><p class="small muted">Orientación general. No sustituye el consejo de tu médico.</p>`);
@@ -873,6 +888,7 @@ document.addEventListener('click', e => {
   if (d.start) return startEx(d.start, +d.min || undefined, !!$('#use-gps')?.checked);
   if (d.toggle) { const k = dkey(); if (d.toggle in doneOn(k)) { delete S.done[k][d.toggle]; save(); } else { setDone(d.toggle, +d.total); beep(880, .12); buzz(60); } return render(); }
   if (d.range != null) { bpRange = +d.range; return render(); }
+  if (d.excl) { const a = S.excl || []; S.excl = a.includes(d.excl) ? a.filter(x => x !== d.excl) : [...a, d.excl]; S.swap = {}; save(); t.setAttribute('aria-pressed', !S.excl.includes(d.excl)); $('#excl-note').innerHTML = exclNote(); return render(); }
   if (d.swap) return openSwap(d.swap);
   if (d.swapto) { const k = dkey(); S.swap ||= {}; S.swap = { [k]: S.swap[k] || {} }; if (d.swapto === d.orig) delete S.swap[k][d.orig]; else S.swap[k][d.orig] = d.swapto; save(); closeSheet(); toast(d.swapto === d.orig ? 'Plan original recuperado.' : `Hoy harás ${EX[d.swapto].name.toLowerCase()}.`); return render(); }
   if (d.excat) { exCat = d.excat; return render(); }
