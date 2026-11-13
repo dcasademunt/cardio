@@ -21,4 +21,13 @@ python3 -m http.server 8000
 
 Para publicarla, activa GitHub Pages (Settings → Pages → Deploy from a branch) y ábrela en el móvil; desde el menú del navegador elige «Añadir a pantalla de inicio». Las notificaciones requieren HTTPS.
 
+## Acceso con Google y copia en la nube (opcional)
+
+1. Crea un proyecto en Supabase y ejecuta `supabase/schema.sql` en su editor SQL.
+2. En Google Cloud crea un cliente OAuth web con la URI de redirección `https://<proyecto>.supabase.co/auth/v1/callback`.
+3. En Supabase → Authentication → Providers activa Google con ese cliente, y en URL Configuration añade la dirección pública de la app.
+4. Copia la URL del proyecto y la clave publicable en `config.js`.
+
+Sin esos valores la app funciona igual, guardando solo en el dispositivo.
+
 Orientación general; no sustituye el consejo médico.

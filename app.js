@@ -45,7 +45,49 @@ const DEF = {
 };
 let S = structuredClone(DEF);
 try { const raw = JSON.parse(localStorage.getItem(KEY)); if (raw) { S = Object.assign(S, raw); S.rem = Object.assign(structuredClone(DEF.rem), raw.rem || {}); S.dash ||= {}; S.wlog ||= []; } } catch (e) { /* sin almacenamiento */ }
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
+const saveLocal = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
+const save = () => { S.updated = Date.now(); saveLocal(); cloudPush(); };
+
+/* ---------- Cuenta y copia en la nube ---------- */
+const CFG = window.PULSO_CONFIG || {};
+let sb = null, user = null, pushT = null, syncMsg = '';
+function cloudInit() {
+  if (!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase) return;
+  try { sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey); } catch (e) { sb = null; return; }
+  sb.auth.onAuthStateChange((ev, session) => {
+    const u = session?.user || null, changed = u?.id !== user?.id; user = u;
+    if (!changed) return;
+    if (u) setTimeout(cloudPull, 0); else { syncMsg = ''; acctRefresh(); }
+  });
+}
+async function cloudPull() {
+  if (!sb || !user) return;
+  try {
+    const { data, error } = await sb.from('pulso_state').select('data').eq('user_id', user.id).maybeSingle();
+    if (error) throw error;
+    const remote = data?.data, firstLink = S.uid !== user.id;
+    /* Primera vez que este dispositivo entra en la cuenta: mandan los datos de la nube. Después, los más recientes. */
+    if (remote?.profile && (firstLink || (remote.updated || 0) > (S.updated || 0))) {
+      const fired = S.fired; S = Object.assign(structuredClone(DEF), remote, { uid: user.id, fired });
+      S.rem = Object.assign(structuredClone(DEF.rem), remote.rem || {}); saveLocal(); closeSheet(); render(); toast('Datos recuperados de tu cuenta.');
+    } else { S.uid = user.id; saveLocal(); if (S.profile) await cloudSend(); }
+    syncMsg = 'Copia al día';
+  } catch (e) { syncMsg = 'Sin conexión con la nube. Se reintentará.'; }
+  acctRefresh();
+}
+async function cloudSend() {
+  if (!sb || !user || !S.profile || S.uid !== user.id) return;
+  const data = Object.assign({}, S, { fired: {} });
+  const { error } = await sb.from('pulso_state').upsert({ user_id: user.id, data, updated_at: new Date().toISOString() });
+  syncMsg = error ? 'No se pudo guardar en la nube. Se reintentará.' : 'Copia al día'; acctRefresh();
+}
+function cloudPush() { if (!sb || !user) return; clearTimeout(pushT); pushT = setTimeout(() => cloudSend().catch(() => {}), 2500); }
+function acctHTML() {
+  if (!sb) return '<p class="small muted">Tus datos se guardan solo en este dispositivo. El acceso con Google aún no está activado en esta instalación.</p>';
+  if (!user) return `<p class="small muted">Entra con tu cuenta de Google para guardar una copia en la nube y tener los mismos datos en el móvil y en otros dispositivos.</p><button class="btn block" data-act="login">Entrar con Google</button>`;
+  return `<div class="row"><span class="avatar">${esc((user.email || '?')[0].toUpperCase())}</span><span class="grow"><b style="overflow-wrap:anywhere">${esc(user.email || '')}</b><br><span class="small muted">${syncMsg || 'Conectando…'}</span></span></div><button class="btn line" data-act="logout">Cerrar sesión</button>`;
+}
+function acctRefresh() { const el = $('#acct'); if (el) el.innerHTML = acctHTML(); }
 let tab = 'hoy', planTab = 'dia', bpRange = 30, dietDay = (new Date().getDay() + 6) % 7, exCat = 'all';
 
 /* ---------- Cálculos del perfil ---------- */
@@ -390,7 +432,7 @@ function checkReminders() {
   const due = slots().filter(s => m >= s.at && m < s.at + 20 && !S.fired[k + s.id]);
   if (!due.length) return;
   due.forEach(s => { S.fired[k + s.id] = 1; });
-  save();
+  saveLocal();
   const s = due[due.length - 1]; notify(s.title, s.body, s.id.replace(/\d+/, ''));
 }
 function ics() {
@@ -690,7 +732,8 @@ function vOnb() {
     <div><h1>Pulso Sano</h1><p class="muted" style="margin-top:6px">Ejercicio guiado, alimentación y seguimiento para mantener tu tensión estable. Cuéntanos sobre ti y preparamos tu plan.</p></div>
     <div class="card">${profileForm()}</div>
     <p class="small muted">Esta app orienta, no sustituye a tu médico. Si tu tensión supera 160/100, tienes una enfermedad del corazón o tomas medicación, consulta antes de empezar. Tus datos se guardan solo en este dispositivo.</p>
-    <button class="btn block" type="submit">Crear mi plan</button></form>`;
+    <button class="btn block" type="submit">Crear mi plan</button>
+    ${sb ? '<button class="btn line block" type="button" data-act="login">Ya tengo cuenta: entrar con Google</button>' : ''}</form>`;
 }
 
 /* ---------- Hojas ---------- */
@@ -742,7 +785,7 @@ function openBP() {
 }
 function openProfile() {
   const c = calc();
-  sheet('Tu perfil', `<div class="grid3"><div class="card flat"><p class="eyebrow">IMC</p><b class="num" style="font-size:1.25rem">${nf(c.bmi)}</b><span class="small muted">${c.bmiTxt}</span></div>
+  sheet('Tu perfil', `<div class="card"><h3>Tu cuenta</h3><div id="acct" style="display:flex;flex-direction:column;gap:12px">${acctHTML()}</div></div><div class="grid3"><div class="card flat"><p class="eyebrow">IMC</p><b class="num" style="font-size:1.25rem">${nf(c.bmi)}</b><span class="small muted">${c.bmiTxt}</span></div>
       <div class="card flat"><p class="eyebrow">FC máx.</p><b class="num" style="font-size:1.25rem">${c.fcm}</b><span class="small muted">lpm estimada</span></div>
       <div class="card flat"><p class="eyebrow">Zona 2</p><b class="num" style="font-size:1.25rem">${c.z2[0]}–${c.z2[1]}</b><span class="small muted">lpm</span></div></div>
     <form id="pform" class="card">${profileForm(S.profile)}<button class="btn block" type="submit">Guardar cambios</button></form>
@@ -916,6 +959,8 @@ document.addEventListener('click', e => {
     case 'rem': return openRem();
     case 'profile': return openProfile();
     case 'refs': return openRefs();
+    case 'login': return sb?.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }).catch(() => toast('No se pudo abrir el acceso con Google.'));
+    case 'logout': clearTimeout(pushT); return cloudSend().catch(() => {}).then(() => sb.auth.signOut()).then(() => { S.uid = null; saveLocal(); toast('Sesión cerrada. Tus datos siguen en este dispositivo.'); });
     case 'water': { const k = dkey(), c = calc(), before = S.water[k] || 0; S.water[k] = Math.max(0, before + +d.ml); save(); if (before < c.water && S.water[k] >= c.water) toast('Objetivo de agua cumplido.'); return render(); }
     case 'km': { const k = dkey(); S.km[k] = Math.max(0, Math.round(((S.km[k] || 0) + +d.km) * 100) / 100); save(); return render(); }
     case 'perm': return Notification.requestPermission().then(() => openRem()).catch(() => openRem());
@@ -925,7 +970,7 @@ document.addEventListener('click', e => {
       download('tension.csv', csv, 'text/csv'); navigator.clipboard?.writeText(csv).then(() => toast('Historial descargado y copiado al portapapeles.'), () => {}); return; }
     case 'restart': S.profile.start = dkey(); S.adj = 0; S.run = null; save(); closeSheet(); toast('Progresión reiniciada en la semana 1.'); return render();
     case 'wipe': if (confirmKey !== 'wipe') { confirmKey = 'wipe'; t.textContent = 'Pulsa otra vez para borrar todo'; return; }
-      confirmKey = null; S = structuredClone(DEF); save(); closeSheet(); tab = 'hoy'; return render();
+      confirmKey = null; if (sb && user) sb.from('pulso_state').delete().eq('user_id', user.id).then(() => {}, () => {}); S = structuredClone(DEF); saveLocal(); closeSheet(); tab = 'hoy'; return render();
   }
 });
 document.addEventListener('submit', e => {
@@ -946,10 +991,11 @@ document.addEventListener('change', e => {
   if (t.id === 'snd') { S.sound = t.checked; save(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (P?.running) navigator.wakeLock?.request('screen').then(w => { wakeLock = w; }).catch(() => {}); if (!P && !$('#scrim')) render(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (user && !P) cloudPull(); if (P?.running) navigator.wakeLock?.request('screen').then(w => { wakeLock = w; }).catch(() => {}); if (!P && !$('#scrim')) render(); } });
 
 setInterval(pTick, 200);
 setInterval(checkReminders, 20000);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+cloudInit();
 render();
 setTimeout(checkReminders, 1500);
