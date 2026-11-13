@@ -1,5 +1,5 @@
 /* Pulso Sano: caché sin conexión y apertura de la app al tocar un aviso. */
-const CACHE = 'pulsosano-v5';
+const CACHE = 'pulsosano-v6';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'icon.svg', 'manifest.webmanifest'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
