@@ -50,21 +50,25 @@ const save = () => { S.updated = Date.now(); saveLocal(); cloudPush(); };
 
 /* ---------- Cuenta y copia en la nube ---------- */
 const CFG = window.PULSO_CONFIG || {};
-let sb = null, user = null, pushT = null, syncMsg = '';
+let sb = null, user = null, pushT = null, syncMsg = '', authReady = false, pulled = false;
+const GATED = !!(CFG.supabaseUrl && CFG.supabaseKey); /* con nube configurada, solo se entra con cuenta de Google */
 function cloudInit() {
   if (!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase) return;
   try { sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey); } catch (e) { sb = null; return; }
   sb.auth.onAuthStateChange((ev, session) => {
-    const u = session?.user || null, changed = u?.id !== user?.id; user = u;
-    if (!changed) return;
-    if (u) setTimeout(cloudPull, 0); else { syncMsg = ''; acctRefresh(); }
+    const u = session?.user || null, changed = u?.id !== user?.id, first = !authReady; user = u; authReady = true;
+    if (!changed) { if (first) render(); return; }
+    if (u) { pulled = false; setTimeout(cloudPull, 0); } else { syncMsg = ''; acctRefresh(); }
+    closeSheet(); render();
   });
+  setTimeout(() => { if (!authReady) { authReady = true; render(); } }, 5000);
 }
 async function cloudPull() {
   if (!sb || !user) return;
   try {
     const { data, error } = await sb.from('pulso_state').select('data').eq('user_id', user.id).maybeSingle();
     if (error) throw error;
+    if (S.uid && S.uid !== user.id) { S = structuredClone(DEF); saveLocal(); } /* otro usuario en este dispositivo: no mezclar datos */
     const remote = data?.data, firstLink = S.uid !== user.id;
     /* Primera vez que este dispositivo entra en la cuenta: mandan los datos de la nube. Después, los más recientes. */
     if (remote?.profile && (firstLink || (remote.updated || 0) > (S.updated || 0))) {
@@ -73,6 +77,7 @@ async function cloudPull() {
     } else { S.uid = user.id; saveLocal(); if (S.profile) await cloudSend(); }
     syncMsg = 'Copia al día';
   } catch (e) { syncMsg = 'Sin conexión con la nube. Se reintentará.'; }
+  const was = pulled; pulled = true; if (!was && !S.profile) render();
   acctRefresh();
 }
 async function cloudSend() {
@@ -426,7 +431,7 @@ function slots() {
   return out;
 }
 function checkReminders() {
-  if (!S.profile) return;
+  if (!S.profile || (GATED && !user)) return;
   const k = dkey(), now = new Date(), m = now.getHours() * 60 + now.getMinutes();
   for (const key of Object.keys(S.fired)) if (!key.startsWith(k)) delete S.fired[key];
   const due = slots().filter(s => m >= s.at && m < s.at + 20 && !S.fired[k + s.id]);
@@ -700,7 +705,8 @@ function vPlan() {
 const TITLES = { hoy: 'Pulso Sano', ej: 'Ejercicios', bp: 'Tensión', dieta: 'Alimentación', plan: 'Tu plan' };
 function render() {
   const app = $('#app');
-  if (!S.profile) { $('.nav').hidden = true; app.innerHTML = vOnb(); return; }
+  if (GATED && !user && !(S.uid && S.profile && (!sb || !navigator.onLine))) { $('.nav').hidden = true; app.innerHTML = sb && !authReady ? vSplash('') : vLanding(); return; }
+  if (!S.profile) { $('.nav').hidden = true; app.innerHTML = GATED && user && !pulled ? vSplash('Cargando tus datos…') : vOnb(); return; }
   $('.nav').hidden = false;
   const view = { hoy: vHoy, ej: vEj, bp: vBP, dieta: vDieta, plan: vPlan }[tab](), p = S.profile, h = new Date().getHours();
   const hi = h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
@@ -727,13 +733,37 @@ function readProfile(root) {
   if (!(p.age >= 18 && p.age <= 100) || !(p.weight >= 35 && p.weight <= 250) || !(p.height >= 120 && p.height <= 230)) { toast('Revisa edad (18–100), peso (35–250 kg) y altura (120–230 cm).'); return null; }
   return p;
 }
+const LOGO = '<svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.5A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11z"/><path d="M4.5 12H9l1.5-3 2.5 5 1.5-2h5"/></svg>';
+const GBTN = lbl => sb ? `<button class="btn gbtn" data-act="login"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.2c0-.8-.1-1.5-.2-2.2H12v4.200h5.900a5 5 0 0 1-2.200 3.300v2.700h3.600c2.100-1.900 3.200-4.800 3.200-8z"/><path fill="#34A853" d="M12 23c3 0 5.500-1 7.300-2.700l-3.600-2.700c-1 .7-2.300 1.100-3.700 1.100-2.900 0-5.300-1.900-6.200-4.500H2.100v2.800A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.800 14.100a6.600 6.600 0 0 1 0-4.200V7.100H2.100a11 11 0 0 0 0 9.800z"/><path fill="#EA4335" d="M12 5.400c1.600 0 3.100.6 4.200 1.600l3.200-3.200A11 11 0 0 0 2.100 7.100l3.700 2.800C6.700 7.300 9.100 5.400 12 5.400z"/></svg>${lbl}</button>`
+  : '<div class="note warn">Necesitas conexión a internet para acceder. Comprueba la red y vuelve a abrir la app.</div>';
+const vSplash = msg => `<div class="splash">${LOGO}<p class="muted">${msg}</p></div>`;
+function vLanding() {
+  const feat = (cat, anim, t, d) => `<div class="feat"><div class="figbox cat-${cat}">${fig(anim)}</div><div><h3>${t}</h3><p class="small muted">${d}</p></div></div>`;
+  return `<div class="land">
+    <header class="row"><span class="brandmark">${LOGO}</span><b class="grow" style="font:800 1.1rem var(--display)">Pulso Sano</b><button class="btn sm ghost" data-act="login">Acceder</button></header>
+    <section class="lhero"><div><p class="eyebrow">Tensión arterial bajo control</p><h1>Tu plan diario para una tensión estable y sana</h1>
+      <p class="muted">Ejercicio guiado, alimentación y seguimiento en una app pensada para el móvil. Se adapta a tu edad, tu peso y tu ritmo.</p></div>
+      <div class="lfig cat-aer">${fig('walkfast')}</div>${GBTN('Acceder con Google')}<p class="small muted" style="text-align:center">Solo se entra con tu cuenta de Google. Sin contraseñas nuevas.</p></section>
+    <section class="lstats"><div><b>−8 mmHg</b>bajada media de la sistólica con ejercicio isométrico</div><div><b>12 semanas</b>de programa progresivo en tres fases</div><div><b>&lt; 5 g</b>de sal al día con el plan DASH</div></section>
+    <section class="card"><h2>Qué incluye</h2>
+      ${feat('iso', 'wallsit', 'Ejercicios guiados y animados', 'Isométricos, caminata con GPS, intervalos, bici, fuerza, tai chi y respiración, con temporizador, sonido y la figura que te marca el movimiento.')}
+      ${feat('str', 'squat', 'Un plan que se adapta', 'Rutina de cada día, de la semana y programa de 12 semanas. Si un ejercicio no te va, lo cambias por su equivalente o lo quitas del plan.')}
+      ${feat('relax', 'breath', 'Seguimiento de la tensión', 'Anota tus medidas, mira tu evolución en la gráfica y prepara la semana de control que valora tu médico.')}
+      ${feat('mov', 'st_up', 'Alimentación DASH', 'Raciones según tus calorías, menú de 14 días, sal oculta en los alimentos y lista de la compra.')}
+      ${feat('aer', 'march', 'Avisos a tu hora', 'Te recuerda el ejercicio, el agua, medir la tensión y tu recorrido diario.')}</section>
+    <section class="card"><h2>Cómo empezar</h2><ol class="lsteps"><li><b>Accede con Google.</b> Tus datos quedan guardados en tu cuenta y los tendrás en cualquier dispositivo.</li>
+      <li><b>Cuéntanos sobre ti.</b> Sexo, edad, peso, altura y cuánto te mueves ahora.</li><li><b>Sigue el plan de hoy.</b> Dos o tres tareas cortas al día; la app guía cada sesión.</li></ol>${GBTN('Acceder con Google')}</section>
+    <section class="card flat"><h3>Con base científica</h3><p class="small muted">El contenido sigue un metaanálisis de 270 ensayos sobre ejercicio y tensión (Br J Sports Med, 2023), el plan DASH de los Institutos Nacionales de Salud de EE. UU. y la guía europea de hipertensión de 2024.</p>
+      <p class="small muted">Pulso Sano orienta, no sustituye a tu médico. Si tu tensión supera 160/100, tienes una enfermedad del corazón o tomas medicación, consulta antes de empezar.</p></section>
+    <p class="small muted" style="text-align:center">Tus datos son privados: solo tu cuenta puede leerlos y puedes borrarlos cuando quieras.</p></div>`;
+}
 function vOnb() {
-  return `<form class="onb" id="onb"><svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.5A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11z"/><path d="M4.5 12H9l1.5-3 2.5 5 1.5-2h5"/></svg>
+  return `<form class="onb" id="onb">${LOGO}
     <div><h1>Pulso Sano</h1><p class="muted" style="margin-top:6px">Ejercicio guiado, alimentación y seguimiento para mantener tu tensión estable. Cuéntanos sobre ti y preparamos tu plan.</p></div>
     <div class="card">${profileForm()}</div>
     <p class="small muted">Esta app orienta, no sustituye a tu médico. Si tu tensión supera 160/100, tienes una enfermedad del corazón o tomas medicación, consulta antes de empezar. Tus datos se guardan solo en este dispositivo.</p>
     <button class="btn block" type="submit">Crear mi plan</button>
-    ${sb ? '<button class="btn line block" type="button" data-act="login">Ya tengo cuenta: entrar con Google</button>' : ''}</form>`;
+    ${sb && !user ? '<button class="btn line block" type="button" data-act="login">Ya tengo cuenta: entrar con Google</button>' : ''}${GATED && user ? `<p class="small muted" style="text-align:center">Has entrado como ${esc(user.email || '')}. <button class="lnk" type="button" data-act="logout" style="display:inline">Cerrar sesión</button></p>` : ''}</form>`;
 }
 
 /* ---------- Hojas ---------- */
@@ -960,7 +990,7 @@ document.addEventListener('click', e => {
     case 'profile': return openProfile();
     case 'refs': return openRefs();
     case 'login': return sb?.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }).catch(() => toast('No se pudo abrir el acceso con Google.'));
-    case 'logout': clearTimeout(pushT); return cloudSend().catch(() => {}).then(() => sb.auth.signOut()).then(() => { S.uid = null; saveLocal(); toast('Sesión cerrada. Tus datos siguen en este dispositivo.'); });
+    case 'logout': clearTimeout(pushT); return cloudSend().catch(() => {}).then(() => sb.auth.signOut()).then(() => { if (GATED) S = structuredClone(DEF); else S.uid = null; saveLocal(); closeSheet(); tab = 'hoy'; render(); toast(GATED ? 'Sesión cerrada.' : 'Sesión cerrada. Tus datos siguen en este dispositivo.'); });
     case 'water': { const k = dkey(), c = calc(), before = S.water[k] || 0; S.water[k] = Math.max(0, before + +d.ml); save(); if (before < c.water && S.water[k] >= c.water) toast('Objetivo de agua cumplido.'); return render(); }
     case 'km': { const k = dkey(); S.km[k] = Math.max(0, Math.round(((S.km[k] || 0) + +d.km) * 100) / 100); save(); return render(); }
     case 'perm': return Notification.requestPermission().then(() => openRem()).catch(() => openRem());
