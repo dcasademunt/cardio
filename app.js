@@ -28,6 +28,7 @@ const I = {
   pause: '<svg viewBox="0 0 24 24"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   skip: '<svg viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></svg>',
+  out: '<svg viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
 };
 
@@ -81,16 +82,16 @@ async function cloudPull() {
   acctRefresh();
 }
 async function cloudSend() {
-  if (!sb || !user || !S.profile || S.uid !== user.id) return;
+  if (!sb || !user || !S.profile || S.uid !== user.id) return true;
   const data = Object.assign({}, S, { fired: {} });
   const { error } = await sb.from('pulso_state').upsert({ user_id: user.id, data, updated_at: new Date().toISOString() });
-  syncMsg = error ? 'No se pudo guardar en la nube. Se reintentará.' : 'Copia al día'; acctRefresh();
+  syncMsg = error ? 'No se pudo guardar en la nube. Se reintentará.' : 'Copia al día'; acctRefresh(); return !error;
 }
 function cloudPush() { if (!sb || !user) return; clearTimeout(pushT); pushT = setTimeout(() => cloudSend().catch(() => {}), 2500); }
 function acctHTML() {
   if (!sb) return '<p class="small muted">Tus datos se guardan solo en este dispositivo. El acceso con Google aún no está activado en esta instalación.</p>';
   if (!user) return `<p class="small muted">Entra con tu cuenta de Google para guardar una copia en la nube y tener los mismos datos en el móvil y en otros dispositivos.</p><button class="btn block" data-act="login">Entrar con Google</button>`;
-  return `<div class="row"><span class="avatar">${esc((user.email || '?')[0].toUpperCase())}</span><span class="grow"><b style="overflow-wrap:anywhere">${esc(user.email || '')}</b><br><span class="small muted">${syncMsg || 'Conectando…'}</span></span></div><button class="btn line" data-act="logout">Cerrar sesión</button>`;
+  return `<div class="row"><span class="avatar">${esc((user.email || '?')[0].toUpperCase())}</span><span class="grow"><b style="overflow-wrap:anywhere">${esc(user.email || '')}</b><br><span class="small muted">${syncMsg || 'Conectando…'}</span></span></div><button class="btn line" data-act="logout">${I.out} Salir de mi cuenta</button>`;
 }
 function acctRefresh() { const el = $('#acct'); if (el) el.innerHTML = acctHTML(); }
 let tab = 'hoy', planTab = 'dia', bpRange = 30, dietDay = (new Date().getDay() + 6) % 7, exCat = 'all';
@@ -712,7 +713,7 @@ function render() {
   const hi = h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
   app.innerHTML = `<header class="top"><button class="avatar" data-act="profile" aria-label="Perfil">${esc((p.name || 'P')[0].toUpperCase())}</button>
     <div class="grow"><p class="eyebrow">${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h1>${tab === 'hoy' ? `${hi}${p.name ? ', ' + esc(p.name) : ''}` : TITLES[tab]}</h1></div>
-    <button class="iconbtn" data-act="rem" aria-label="Avisos">${I.bell}</button></header><main class="view">${view}</main>`;
+    <button class="iconbtn" data-act="rem" aria-label="Avisos">${I.bell}</button>${GATED && user ? `<button class="iconbtn" data-act="logout" aria-label="Salir" title="Salir">${I.out}</button>` : ''}</header><main class="view">${view}</main>`;
   $$('.nav button').forEach(b => { b.removeAttribute('aria-current'); if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); });
   if (tab === 'bp') wireChart();
 }
@@ -990,7 +991,11 @@ document.addEventListener('click', e => {
     case 'profile': return openProfile();
     case 'refs': return openRefs();
     case 'login': return sb?.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }).catch(() => toast('No se pudo abrir el acceso con Google.'));
-    case 'logout': clearTimeout(pushT); return cloudSend().catch(() => {}).then(() => sb.auth.signOut()).then(() => { if (GATED) S = structuredClone(DEF); else S.uid = null; saveLocal(); closeSheet(); tab = 'hoy'; render(); toast(GATED ? 'Sesión cerrada.' : 'Sesión cerrada. Tus datos siguen en este dispositivo.'); });
+    case 'logout': clearTimeout(pushT);
+      if (GATED && confirmKey !== 'logout') { confirmKey = 'logout'; setTimeout(() => { confirmKey = null; }, 4000); return toast('Pulsa «Salir» otra vez para cerrar la sesión.'); }
+      confirmKey = null;
+      return cloudSend().catch(() => false).then(ok => { if (GATED && !ok) return toast('Sin conexión: no se puede salir sin guardar antes tus últimos cambios. Inténtalo con internet.');
+        return sb.auth.signOut().then(() => { if (GATED) S = structuredClone(DEF); else S.uid = null; saveLocal(); closeSheet(); tab = 'hoy'; render(); toast('Has salido de tu cuenta.'); }); });
     case 'water': { const k = dkey(), c = calc(), before = S.water[k] || 0; S.water[k] = Math.max(0, before + +d.ml); save(); if (before < c.water && S.water[k] >= c.water) toast('Objetivo de agua cumplido.'); return render(); }
     case 'km': { const k = dkey(); S.km[k] = Math.max(0, Math.round(((S.km[k] || 0) + +d.km) * 100) / 100); save(); return render(); }
     case 'perm': return Notification.requestPermission().then(() => openRem()).catch(() => openRem());
