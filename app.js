@@ -11,6 +11,39 @@ const hm = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const fmtHM = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
 const mmss = s => `${pad(Math.floor(s / 60))}:${pad(Math.floor(s % 60))}`;
 const nf = (n, d = 1) => Number(n).toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d });
+/* ---------- Idioma ----------
+   Los textos se escriben en castellano. En catalán se traducen al pintarlos, con el diccionario de ca.js.
+   Las cifras se sustituyen por # para que una sola entrada sirva con cualquier número. */
+const LANG = (() => { try { const v = localStorage.getItem('pulsosano.lang'); if (v) return v; } catch (e) { /* sin almacenamiento */ } return (navigator.language || '').toLowerCase().startsWith('ca') ? 'ca' : 'es'; })();
+const LOC = LANG === 'ca' ? 'ca-ES' : LOC;
+const DICT = LANG === 'ca' ? (window.PULSO_CA || {}) : null, MISS = new Set();
+document.documentElement.lang = LANG;
+function trKey(str) {
+  const nums = [], key = str.replace(/\d+/g, m => { nums.push(m); return '#'; });
+  let v = DICT[key];
+  if (v == null) { const up = key[0].toUpperCase() + key.slice(1); if (up !== key && DICT[up] != null) v = DICT[up][0].toLowerCase() + DICT[up].slice(1); }
+  if (v == null) { MISS.add(key); return null; }
+  let i = 0; return v.replace(/#/g, () => nums[i++] ?? '#');
+}
+function tr(str) {
+  if (!DICT || !str) return str;
+  const m = String(str).match(/^([\s✓▲▼●+−·:«»]*)([\s\S]*?)(\s*)$/), core = m[2];
+  if (!/[a-zA-Záéíóúñ]/.test(core)) return str;
+  let v = trKey(core);
+  if (v == null && core.includes(' · ')) v = core.split(' · ').map(p => (/[a-zA-Záéíóúñ]/.test(p) ? trKey(p) ?? p : p)).join(' · ');
+  return v == null ? str : m[1] + v + m[3];
+}
+function trDom(root) {
+  if (!DICT || !root) return;
+  if (root.nodeType === 3) { if (!root.parentElement?.closest('svg,script,style,[data-notr]')) { const v = tr(root.nodeValue); if (v !== root.nodeValue) root.nodeValue = v; } return; }
+  if (root.nodeType !== 1 || root.closest('svg,[data-notr]')) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) { if (n.parentElement.closest('svg,script,style,[data-notr]')) continue; const v = tr(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; }
+  for (const el of [root, ...root.querySelectorAll('[aria-label],[placeholder],[title]')]) for (const a of ['aria-label', 'placeholder', 'title']) if (el.hasAttribute?.(a)) { const v = tr(el.getAttribute(a)); if (v !== el.getAttribute(a)) el.setAttribute(a, v); }
+}
+if (DICT) addEventListener('DOMContentLoaded', () => { trDom(document.body);
+  new MutationObserver(ms => { for (const m of ms) { if (m.type === 'characterData') trDom(m.target); else m.addedNodes.forEach(trDom); } }).observe(document.body, { childList: true, subtree: true, characterData: true }); });
+const langSeg = () => `<div class="seg langseg" role="group" aria-label="Idioma">${[['es', 'Castellano'], ['ca', 'Català']].map(([k, t]) => `<button data-lang="${k}" aria-pressed="${LANG === k}" data-notr>${t}</button>`).join('')}</div>`;
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const DAY1 = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
 const DAYS_L = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -92,7 +125,7 @@ function cloudPush() { if (!sb || !user) return; clearTimeout(pushT); pushT = se
 function acctHTML() {
   if (!sb) return '<p class="small muted">Tus datos se guardan solo en este dispositivo. El acceso con Google aún no está activado en esta instalación.</p>';
   if (!user) return `<p class="small muted">Entra con tu cuenta de Google para guardar una copia en la nube y tener los mismos datos en el móvil y en otros dispositivos.</p><button class="btn block" data-act="login">Entrar con Google</button>`;
-  return `<div class="row"><span class="avatar">${esc((user.email || '?')[0].toUpperCase())}</span><span class="grow"><b style="overflow-wrap:anywhere">${esc(user.email || '')}</b><br><span class="small muted">${syncMsg || 'Conectando…'}</span></span></div><button class="btn line" data-act="logout">${I.out} Salir de mi cuenta</button>`;
+  return `<div class="row"><span class="avatar" data-notr>${esc((user.email || '?')[0].toUpperCase())}</span><span class="grow"><b style="overflow-wrap:anywhere" data-notr>${esc(user.email || '')}</b><br><span class="small muted">${syncMsg || 'Conectando…'}</span></span></div><button class="btn line" data-act="logout">${I.out} Salir de mi cuenta</button>`;
 }
 function acctRefresh() { const el = $('#acct'); if (el) el.innerHTML = acctHTML(); }
 let tab = 'hoy', planTab = 'dia', bpRange = 30, dietDay = (new Date().getDay() + 6) % 7, exCat = 'all';
@@ -302,7 +335,7 @@ function exclNote() {
   const ex = S.excl || [], noAer = AER.every(a => ex.includes(a)), noIso = ['wallsit', 'grip'].every(a => ex.includes(a)) || (S.profile.knee && ex.includes('grip'));
   return noAer ? '<span style="color:var(--serious)">Has quitado todos los aeróbicos: el plan pierde su base. Deja al menos uno, por ejemplo la marcha en casa.</span>'
     : noIso ? '<span style="color:var(--warn)">Sin isométricos el plan pierde el ejercicio que más baja la tensión. Si puedes, deja el apretón de mano.</span>'
-    : ex.length ? `Quitados: ${ex.map(i => SHORT[i].toLowerCase()).join(', ')}. En su lugar entra el ejercicio más parecido.` : 'Todos los ejercicios están en tu plan.';
+    : ex.length ? `${tr('Quitados')}: ${ex.map(i => tr(SHORT[i]).toLowerCase()).join(', ')}. ${tr('En su lugar entra el ejercicio más parecido.')}` : 'Todos los ejercicios están en tu plan.';
 }
 const doneOn = k => S.done[k] || {};
 function setDone(id, minutes, k = dkey()) { (S.done[k] ||= {})[id] = minutes; save(); }
@@ -415,6 +448,7 @@ function toast(msg) {
 }
 const canNotify = () => 'Notification' in window;
 async function notify(title, body, tag) {
+  title = tr(title); body = tr(body);
   toast(`${title} · ${body}`); beep(660, .12); beep(880, .18, .16); buzz([120, 60, 120]);
   if (!canNotify() || Notification.permission !== 'granted') return;
   try {
@@ -426,7 +460,7 @@ async function notify(title, body, tag) {
 function slots() {
   const R = S.rem, c = calc(), k = dkey(), out = [], day = new Date().getDay();
   const tasks = tasksFor(), pending = tasks.filter(t => !(t.id in doneOn(k)));
-  if (R.ex.on && R.ex.days.includes(day) && pending.length) out.push({ id: 'ex', at: hm(R.ex.time), title: 'Hora de moverte', body: pending.map(t => `${EX[t.id].name} (${t.total} min)`).join(' + ') });
+  if (R.ex.on && R.ex.days.includes(day) && pending.length) out.push({ id: 'ex', at: hm(R.ex.time), title: 'Hora de moverte', body: pending.map(t => `${tr(EX[t.id].name)} (${t.total} min)`).join(' + ') });
   if (R.bp.on) [R.bp.t1, R.bp.t2].forEach((t, i) => t && out.push({ id: 'bp' + i, at: hm(t), title: 'Mide tu tensión', body: 'Siéntate 5 minutos en calma y anota la medida.' }));
   if (R.water.on && (S.water[k] || 0) < c.water) for (let m = hm(R.water.from); m <= hm(R.water.to); m += Math.max(30, +R.water.every)) out.push({ id: 'w' + m, at: m, title: 'Bebe agua', body: `Un vaso ahora. Llevas ${nf((S.water[k] || 0) / 1000)} de ${nf(c.water / 1000)} L.` });
   if (R.move.on) for (let m = hm(R.move.from); m <= hm(R.move.to); m += Math.max(30, +R.move.every)) out.push({ id: 'm' + m, at: m, title: 'Levántate un momento', body: 'Camina o estira 2 minutos. Tus arterias lo notan.' });
@@ -448,7 +482,7 @@ function checkReminders() {
 function ics() {
   const R = S.rem, D = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'], today = dkey().replace(/-/g, ''), out = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Pulso Sano//ES'];
   const ev = (id, time, title, desc, rule = 'FREQ=DAILY') => out.push('BEGIN:VEVENT', `UID:${id}@pulsosano`, `DTSTAMP:${today}T000000Z`, `DTSTART:${today}T${time.replace(':', '')}00`, 'DURATION:PT10M', `RRULE:${rule}`,
-    `SUMMARY:${title}`, `DESCRIPTION:${desc}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT');
+    `SUMMARY:${tr(title)}`, `DESCRIPTION:${tr(desc)}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${tr(title)}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT');
   if (R.ex.on && R.ex.days.length) ev('ex', R.ex.time, 'Ejercicio cardiovascular', 'Abre Pulso Sano y haz la sesión de hoy.', 'FREQ=WEEKLY;BYDAY=' + R.ex.days.map(d => D[d]).join(','));
   if (R.bp.on) [R.bp.t1, R.bp.t2].forEach((t, i) => t && ev('bp' + i, t, 'Medir la tensión', '5 minutos sentado en calma antes de medir.'));
   if (R.water.on) for (let m = hm(R.water.from); m <= hm(R.water.to); m += Math.max(30, +R.water.every)) ev('w' + m, fmtHM(m), 'Beber un vaso de agua', 'Hidratación');
@@ -506,7 +540,7 @@ function wireChart() {
     const x = data.reduce((a, b) => Math.abs(b.t - tt) < Math.abs(a.t - tt) ? b : a), px = 30 + (t1 === t0 ? .5 : (x.t - t0) / (t1 - t0)) * 248;
     xh.setAttribute('x1', px); xh.setAttribute('x2', px); xh.setAttribute('visibility', 'visible');
     tip.hidden = false; tip.style.left = clamp(px / 340 * 100, 22, 78) + '%'; tip.style.top = '18px';
-    tip.textContent = `${new Date(x.t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${x.s}/${x.d}${x.p ? ' · ' + x.p + ' lpm' : ''}`;
+    tip.textContent = `${new Date(x.t).toLocaleDateString(LOC, { day: 'numeric', month: 'short' })} · ${x.s}/${x.d}${x.p ? ' · ' + x.p + ' lpm' : ''}`;
   };
   svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
   svg.addEventListener('pointerleave', () => { tip.hidden = true; xh.setAttribute('visibility', 'hidden'); });
@@ -568,7 +602,7 @@ const ringSVG = (pct, size = 84) => { const r = 36, c = 2 * Math.PI * r; return 
 function taskRow(t, k = dkey()) {
   const done = t.id in doneOn(k), e = EX[t.id];
   return `<div class="task ${done ? 'done' : ''}"><div class="figbox cat-${e.cat}">${fig(e.anim, false)}</div>
-    <div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${t.total} min${t.orig ? ` · en lugar de ${SHORT[t.orig].toLowerCase()}` : ''}</span>${done ? '' : `<button class="lnk" data-swap="${t.orig || t.id}">Cambiar ejercicio</button>`}</div>
+    <div class="t"><b>${e.name}</b><span class="small muted">${CAT[e.cat]} · ${t.total} min${t.orig ? ` · ${tr('en lugar de')} ${tr(SHORT[t.orig]).toLowerCase()}` : ''}</span>${done ? '' : `<button class="lnk" data-swap="${t.orig || t.id}">Cambiar ejercicio</button>`}</div>
     ${done ? '' : `<button class="play" data-open="${t.id}" data-min="${t.min || ''}" aria-label="Empezar ${e.name}">${I.play}</button>`}
     <button class="chk ${done ? 'on' : ''}" data-toggle="${t.id}" data-total="${t.total}" aria-label="${done ? 'Desmarcar' : 'Marcar hecho'} ${e.name}" aria-pressed="${done}">${I.check}</button></div>`;
 }
@@ -588,7 +622,7 @@ function vHoy() {
     <section class="card"><div class="row"><h2 class="grow">Hoy toca</h2><span class="pill ${nDone === tasks.length ? 'good' : 'brand'}">${nDone} de ${tasks.length}</span></div>
       ${tasks.map(t => taskRow(t)).join('')}</section>
     <section class="card"><div class="row"><h2 class="grow">Tensión</h2>${bp ? `<span class="pill ${cls.c}">${cls.i} ${cls.t}</span>` : ''}</div>
-      ${bp ? `<div class="row"><div class="grow"><div class="bpnow"><span class="v">${bp.s}/${bp.d}</span><span class="muted">mmHg</span></div><p class="small muted">${new Date(bp.t).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}${bp.p ? ` · ${bp.p} lpm` : ''}</p></div><div style="width:42%">${spark()}</div></div>` : '<p class="muted">Aún no hay medidas. Anota la primera para empezar el seguimiento.</p>'}
+      ${bp ? `<div class="row"><div class="grow"><div class="bpnow"><span class="v">${bp.s}/${bp.d}</span><span class="muted">mmHg</span></div><p class="small muted">${new Date(bp.t).toLocaleString(LOC, { weekday: 'long', hour: '2-digit', minute: '2-digit' })}${bp.p ? ` · ${bp.p} lpm` : ''}</p></div><div style="width:42%">${spark()}</div></div>` : '<p class="muted">Aún no hay medidas. Anota la primera para empezar el seguimiento.</p>'}
       <button class="btn" data-act="bp-add">${I.plus} Anotar tensión</button></section>
     <div class="mini"><section class="card"><div class="row"><h3 class="grow">Agua</h3><span class="tile cat-relax" style="width:34px;height:34px;display:grid;place-items:center;border-radius:10px"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.500 6-11 6-11z"/></svg></span></div>
         <div><span class="v">${nf(ml / 1000, 2)}</span> <span class="small muted">/ ${nf(c.water / 1000)} L</span></div><div class="bar water"><i style="width:${clamp(ml / c.water, 0, 1) * 100}%"></i></div>
@@ -635,7 +669,7 @@ function vBP() {
     <section class="card"><h2>Evolución</h2>
       <div class="seg" role="group" aria-label="Periodo">${[[7, '7 días'], [30, '30 días'], [90, '3 meses'], [0, 'Todo']].map(([d, t]) => `<button data-range="${d}" aria-pressed="${bpRange === d}">${t}</button>`).join('')}</div>${bpChart()}</section>
     <section class="card"><div class="row"><h2 class="grow">Historial</h2>${list.length ? '<button class="btn sm ghost" data-act="bp-csv">Exportar</button>' : ''}</div>
-      <div class="list">${list.length ? list.slice(0, 40).map(x => { const c = bpClass(x.s, x.d); return `<div class="li"><div class="grow"><b class="num">${x.s}/${x.d}</b>${x.p ? ` <span class="muted small">${x.p} lpm</span>` : ''}<br><span class="small muted">${new Date(x.t).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${x.n ? ' · ' + esc(x.n) : ''}</span></div><span class="pill ${c.c}">${c.i} ${c.t}</span><button class="x" data-del="${x.t}" aria-label="Borrar medida">×</button></div>`; }).join('') : '<p class="muted small">Tus medidas aparecerán aquí.</p>'}</div></section>
+      <div class="list">${list.length ? list.slice(0, 40).map(x => { const c = bpClass(x.s, x.d); return `<div class="li"><div class="grow"><b class="num">${x.s}/${x.d}</b>${x.p ? ` <span class="muted small">${x.p} lpm</span>` : ''}<br><span class="small muted">${new Date(x.t).toLocaleString(LOC, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${x.n ? ' · ' + esc(x.n) : ''}</span></div><span class="pill ${c.c}">${c.i} ${c.t}</span><button class="x" data-del="${x.t}" aria-label="Borrar medida">×</button></div>`; }).join('') : '<p class="muted small">Tus medidas aparecerán aquí.</p>'}</div></section>
     <section class="card flat"><h3>Cómo medir bien</h3><ol class="small muted" style="margin:0;padding-left:20px;display:grid;gap:5px"><li>Sin café, tabaco ni ejercicio en los 30 minutos previos; vejiga vacía.</li><li>Sentado 5 minutos, espalda apoyada, pies en el suelo y sin cruzar las piernas.</li><li>Manguito en el brazo desnudo, a la altura del corazón. Mejor tensiómetro de brazo que de muñeca.</li><li>Sin hablar. Dos medidas separadas 1 minuto; anota la segunda.</li></ol>
       ${vids('bp')}<p class="small muted">La guía europea de 2024 llama «presión elevada» a 120–139/70–89 e hipertensión a 140/90 o más en consulta. Tu médico decide tu objetivo.</p>${src('esc')}</section>`;
 }
@@ -652,7 +686,7 @@ function vDieta() {
       <div class="card flat"><p class="eyebrow">Sal</p><b class="num" style="font-size:1.25rem">&lt; 5 g</b><span class="small muted">2 g de sodio, incluida la oculta</span></div>
       <div class="card flat"><p class="eyebrow">Agua</p><b class="num" style="font-size:1.25rem">${nf(c.water / 1000)} L</b><span class="small muted">unos ${Math.round(c.water / 250)} vasos</span></div></section>
     <section class="card"><div class="row"><h2 class="grow">Raciones de hoy</h2><span class="pill ${total >= goal ? 'good' : 'brand'}">${total} de ${goal}</span></div>
-      <p class="small muted">Tu pauta DASH para unas ${tier.toLocaleString('es-ES')} kcal. Toca + cada vez que tomes una ración.</p>
+      <p class="small muted">Tu pauta DASH para unas ${tier.toLocaleString(LOC)} kcal. Toca + cada vez que tomes una ración.</p>
       ${GROUPS.map(([g, n, ex]) => `<div class="srv"><div><b>${n}</b> <span class="small muted">${got[g] || 0}/${D[g]}</span><br><span class="small muted">${ex}</span></div><div class="ctl"><button class="rnd" data-srv="${g}" data-n="-1" aria-label="Quitar ración de ${n}">−</button><button class="rnd add" data-srv="${g}" data-n="1" aria-label="Sumar ración de ${n}">+</button></div>
         <div class="sdots" aria-hidden="true">${Array.from({ length: D[g] }, (_, i) => `<i class="${i < (got[g] || 0) ? 'on' : ''}"></i>`).join('')}</div></div>`).join('')}
       <p class="small muted">Además: carne magra, ave o pescado, como mucho ${D.meat} raciones de 30 g al día; aceite de oliva, ${D.oil} cucharadas; dulces, como mucho ${D.sweet}. Legumbres y frutos secos: al menos ${D.legTxt}.</p></section>
@@ -689,7 +723,7 @@ function vPlan() {
     rows.push([hm('11:00'), 'Pausa activa', 'Levántate cada hora: 2 minutos de paseo o estiramiento.']);
     rows.push([hm('14:00'), 'Comida', M[1]]);
     rows.push([hm('17:00'), 'Merienda', M[2]]);
-    rows.push([hm(R.ex.time), 'Sesión de ejercicio', tasks.map(t => `${EX[t.id].name} (${t.total} min)`).join(' + ')]);
+    rows.push([hm(R.ex.time), 'Sesión de ejercicio', tasks.map(t => `${tr(EX[t.id].name)} (${t.total} min)`).join(' + ')]);
     if (R.bp.t2) rows.push([hm(R.bp.t2), 'Medir la tensión', 'Antes de cenar y al menos 30 minutos después del ejercicio.']);
     rows.push([hm('21:00'), 'Cena ligera', M[3]]);
     rows.push([hm('23:00'), 'Dormir 7–8 horas', 'Dormir poco sube la tensión. Pantallas fuera 30 minutos antes.']);
@@ -718,15 +752,15 @@ function vPlan() {
       <div class="scroll-x"><table class="prog"><tr><th>Semana</th><th>Isométrico</th><th>Aeróbico</th><th>Fuerza</th></tr>
       ${[0, 1, 2, 3].map(i => w0 + i).map(w => `<tr class="${w === P0.w ? 'cur' : ''}"><td>${w}${w === P0.w ? ' · ahora' : ''}</td><td>4 × ${mmss(PROG.hold[L][w - 1])}</td><td>${PROG.aer[L][w - 1]} min</td><td>${PROG.rounds[L][w - 1]} ${PROG.rounds[L][w - 1] === 1 ? 'ronda' : 'rondas'}</td></tr>`).join('')}</table></div>
       <p class="small muted">El plan se adapta: si valoras dos sesiones seguidas como duras, repite semana; si son fáciles, avanza. El efecto sobre la tensión suele verse entre las semanas 4 y 8 y se pierde si lo dejas.</p></section>
-    <section class="card"><div class="row"><h2 class="grow">${(m => m[0].toUpperCase() + m.slice(1))(today.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }))}</h2><span class="pill good">${full} días completos</span></div>
+    <section class="card"><div class="row"><h2 class="grow">${(m => m[0].toUpperCase() + m.slice(1))(today.toLocaleDateString(LOC, { month: 'long', year: 'numeric' }))}</h2><span class="pill good">${full} días completos</span></div>
       <div class="cal">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<span>${d}</span>`).join('')}${cells}</div>
       <div class="legend"><span><i style="background:var(--good)"></i>Todo hecho</span><span><i style="background:var(--warn)"></i>Parte</span></div></section>
     <section class="card"><div class="row"><h2 class="grow">Peso</h2><span class="pill">${nf(S.profile.weight)} kg</span></div>
-      ${wl.length > 1 ? `<p>Desde ${new Date(wl[0].t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}: <b>${nf(wl[0].kg)} → ${nf(wl.at(-1).kg)} kg</b> (${wl.at(-1).kg - wl[0].kg > 0 ? '+' : ''}${nf(wl.at(-1).kg - wl[0].kg)} kg)</p>` : '<p class="small muted">Pésate el mismo día cada semana, en ayunas, y actualiza el peso para ver tu evolución.</p>'}
+      ${wl.length > 1 ? `<p>Desde ${new Date(wl[0].t).toLocaleDateString(LOC, { day: 'numeric', month: 'short' })}: <b>${nf(wl[0].kg)} → ${nf(wl.at(-1).kg)} kg</b> (${wl.at(-1).kg - wl[0].kg > 0 ? '+' : ''}${nf(wl.at(-1).kg - wl[0].kg)} kg)</p>` : '<p class="small muted">Pésate el mismo día cada semana, en ayunas, y actualiza el peso para ver tu evolución.</p>'}
       ${c.lose ? `<div class="bar"><i style="width:${clamp((wl[0]?.kg ?? S.profile.weight) > c.goalKg ? ((wl[0]?.kg ?? S.profile.weight) - S.profile.weight) / ((wl[0]?.kg ?? S.profile.weight) - c.goalKg) : 0, 0, 1) * 100}%"></i></div><p class="small muted">Objetivo: ${nf(c.goalKg)} kg, un 5 % menos, en unos 3 meses.</p>` : ''}
       <form id="wform" class="row"><div class="field grow"><label for="w-kg">Peso de hoy (kg)</label><input id="w-kg" type="number" inputmode="decimal" step="0.1" min="35" max="250" required placeholder="${S.profile.weight}"></div><button class="btn" style="align-self:end" type="submit">Guardar</button></form></section>
     <section class="card"><div class="row"><h2 class="grow">Analíticas</h2>${(S.labs || []).length ? `<span class="pill">${S.labs.length}</span>` : ''}</div>
-      ${(S.labs || []).length ? `<div class="list">${[...S.labs].sort((a, b) => b.t - a.t).slice(0, 5).map(x => `<div class="li"><div class="grow"><span class="small muted">${new Date(x.t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}</span><div class="chips" style="margin-top:4px">${x.tg ? `<span class="pill ${x.tg < 150 ? 'good' : 'serious'}">TG ${x.tg}</span>` : ''}${x.ldl ? `<span class="pill ${x.ldl < 70 ? 'good' : x.ldl < 100 ? 'warn' : 'serious'}">LDL ${x.ldl}</span>` : ''}${x.apob ? `<span class="pill">ApoB ${x.apob}</span>` : ''}</div></div><button class="x" data-dellab="${x.t}" aria-label="Borrar analítica">×</button></div>`).join('')}</div>` : '<p class="small muted">Apunta aquí los resultados de tus análisis para ver cómo cambian con el plan.</p>'}
+      ${(S.labs || []).length ? `<div class="list">${[...S.labs].sort((a, b) => b.t - a.t).slice(0, 5).map(x => `<div class="li"><div class="grow"><span class="small muted">${new Date(x.t).toLocaleDateString(LOC, { day: 'numeric', month: 'short', year: 'numeric' })}</span><div class="chips" style="margin-top:4px">${x.tg ? `<span class="pill ${x.tg < 150 ? 'good' : 'serious'}">TG ${x.tg}</span>` : ''}${x.ldl ? `<span class="pill ${x.ldl < 70 ? 'good' : x.ldl < 100 ? 'warn' : 'serious'}">LDL ${x.ldl}</span>` : ''}${x.apob ? `<span class="pill">ApoB ${x.apob}</span>` : ''}</div></div><button class="x" data-dellab="${x.t}" aria-label="Borrar analítica">×</button></div>`).join('')}</div>` : '<p class="small muted">Apunta aquí los resultados de tus análisis para ver cómo cambian con el plan.</p>'}
       <form id="labform" style="display:flex;flex-direction:column;gap:12px"><div class="grid3"><div class="field"><label for="lab-tg">Triglicéridos</label><input id="lab-tg" type="number" inputmode="numeric" min="20" max="2000" placeholder="mg/dL"></div><div class="field"><label for="lab-ldl">LDL</label><input id="lab-ldl" type="number" inputmode="numeric" min="10" max="500" placeholder="mg/dL"></div><div class="field"><label for="lab-apob">ApoB</label><input id="lab-apob" type="number" inputmode="numeric" min="10" max="400" placeholder="mg/dL"></div></div>
         <div class="row"><div class="field grow"><label for="lab-d">Fecha del análisis</label><input id="lab-d" type="date" value="${dkey()}" max="${dkey()}"></div><button class="btn" style="align-self:end" type="submit">Guardar</button></div></form>
       <details class="acc"><summary>Qué cifras buscar</summary><div class="accb">${LIPID_HTML}</div></details></section>
@@ -742,8 +776,8 @@ function render() {
   $('.nav').hidden = false;
   const view = { hoy: vHoy, ej: vEj, bp: vBP, dieta: vDieta, plan: vPlan }[tab](), p = S.profile, h = new Date().getHours();
   const hi = h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
-  app.innerHTML = `<header class="top"><button class="avatar" data-act="profile" aria-label="Perfil">${esc((p.name || 'P')[0].toUpperCase())}</button>
-    <div class="grow"><p class="eyebrow">${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h1>${tab === 'hoy' ? `${hi}${p.name ? ', ' + esc(p.name) : ''}` : TITLES[tab]}</h1></div>
+  app.innerHTML = `<header class="top"><button class="avatar" data-act="profile" aria-label="Perfil" data-notr>${esc((p.name || 'P')[0].toUpperCase())}</button>
+    <div class="grow"><p class="eyebrow">${new Date().toLocaleDateString(LOC, { weekday: 'long', day: 'numeric', month: 'long' })}</p><h1>${tab === 'hoy' ? `${hi}${p.name ? `<span data-notr>, ${esc(p.name)}</span>` : ''}` : TITLES[tab]}</h1></div>
     <button class="iconbtn" data-act="rem" aria-label="Avisos">${I.bell}</button>${GATED && user ? `<button class="iconbtn" data-act="logout" aria-label="Salir" title="Salir">${I.out}</button>` : ''}</header><main class="view">${view}</main>`;
   $$('.nav button').forEach(b => { b.removeAttribute('aria-current'); if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); });
   if (tab === 'bp') wireChart();
@@ -826,7 +860,7 @@ function bmiCalc() {
 function vLanding() {
   const feat = (cat, anim, t, d) => `<div class="feat"><div class="figbox cat-${cat}">${fig(anim)}</div><div><h3>${t}</h3><p class="small muted">${d}</p></div></div>`;
   return `<div class="land">
-    <header class="row"><span class="brandmark">${LOGO}</span><b class="grow" style="font:800 1.1rem var(--display)">Pulso Sano</b><button class="btn sm ghost" data-act="login">Acceder</button></header>
+    <header class="row"><span class="brandmark">${LOGO}</span><b class="grow" style="font:800 1.1rem var(--display)" data-notr>Pulso Sano</b><button class="btn sm ghost" data-act="login">Acceder</button></header>${langSeg()}
     <section class="lhero"><div><p class="eyebrow">Tensión arterial bajo control</p><h1>Tu plan diario para una tensión estable y sana</h1>
       <p class="muted">Ejercicio guiado, alimentación y seguimiento en una app pensada para el móvil. Se adapta a tu edad, tu peso y tu ritmo.</p></div>
       <div class="lfig cat-aer">${fig('walkfast')}</div>${GBTN('Acceder con Google')}<p class="small muted" style="text-align:center">Solo se entra con tu cuenta de Google. Sin contraseñas nuevas.</p></section>
@@ -850,7 +884,7 @@ function vOnb() {
     <div class="card">${profileForm()}</div>
     <p class="small muted">Esta app orienta, no sustituye a tu médico. Si tu tensión supera 160/100, tienes una enfermedad del corazón o tomas medicación, consulta antes de empezar. Tus datos se guardan solo en este dispositivo.</p>
     <button class="btn block" type="submit">Crear mi plan</button>
-    ${sb && !user ? '<button class="btn line block" type="button" data-act="login">Ya tengo cuenta: entrar con Google</button>' : ''}${GATED && user ? `<p class="small muted" style="text-align:center">Has entrado como ${esc(user.email || '')}. <button class="lnk" type="button" data-act="logout" style="display:inline">Cerrar sesión</button></p>` : ''}</form>`;
+    ${sb && !user ? '<button class="btn line block" type="button" data-act="login">Ya tengo cuenta: entrar con Google</button>' : ''}${GATED && user ? `<p class="small muted" style="text-align:center">Has entrado como <span data-notr>${esc(user.email || '')}</span>. <button class="lnk" type="button" data-act="logout" style="display:inline">Cerrar sesión</button></p>` : ''}</form>`;
 }
 
 /* ---------- Hojas ---------- */
@@ -908,6 +942,7 @@ function openProfile() {
     <form id="pform" class="card">${profileForm(S.profile)}<button class="btn block" type="submit">Guardar cambios</button></form>
     <div class="card"><h3>Ejercicios de mi plan</h3><p class="small muted">Desmarca los que no puedas o no quieras hacer nunca. El plan los sustituye por el más parecido, todos los días.</p>
       <div class="chips" role="group" aria-label="Ejercicios de mi plan">${Object.keys(EX).map(id => `<button class="chip" data-excl="${id}" aria-pressed="${!(S.excl || []).includes(id)}">${SHORT[id]}</button>`).join('')}</div><p class="small muted" id="excl-note">${exclNote()}</p></div>
+    <div class="card"><h3>Idioma</h3>${langSeg()}</div>
     <div class="card flat"><label class="row"><input type="checkbox" class="switch" id="snd" ${S.sound ? 'checked' : ''}><span class="grow">Sonidos en ejercicios y avisos</span></label>
       <button class="btn line" data-act="restart">Reiniciar el programa de 12 semanas</button><button class="btn danger" data-act="wipe">Borrar todos mis datos</button></div>
     <button class="btn ghost" data-act="refs">Ver fuentes científicas</button><p class="small muted">Orientación general. No sustituye el consejo de tu médico.</p>`);
@@ -972,7 +1007,7 @@ function pDraw() {
   if ((P.id === 'walk' || P.id === 'bike') && ph.type === 'work' && ph.secs > 60) { const z = calc().z2; cue += ` · ${z[0]}–${z[1]} lpm`; }
   $('.cue', el).textContent = cue;
   const rest = P.left + P.phases.slice(P.i + 1).reduce((a, x) => a + x.secs, 0), nx = P.phases[P.i + 1];
-  $('.next', el).textContent = `Quedan ${Math.ceil(rest / 60)} min${nx ? ' · después: ' + nx.label : ''}`;
+  $('.next', el).textContent = `Quedan ${Math.ceil(rest / 60)} min${nx ? ` · ${tr('después')}: ${tr(nx.label)}` : ''}`;
   if (P.watch != null) { $('#g-km').textContent = nf(P.km, 2); const mins = P.active / 60; $('#g-pace').textContent = P.km > .05 ? nf(mins / P.km, 1) : '—'; }
 }
 let wakeLock = null;
@@ -1050,9 +1085,10 @@ document.addEventListener('click', e => {
   if (d.toggle) { const k = dkey(); if (d.toggle in doneOn(k)) { delete S.done[k][d.toggle]; save(); } else { setDone(d.toggle, +d.total); beep(880, .12); buzz(60); } return render(); }
   if (d.range != null) { bpRange = +d.range; return render(); }
   if (d.excl) { const a = S.excl || []; S.excl = a.includes(d.excl) ? a.filter(x => x !== d.excl) : [...a, d.excl]; S.swap = {}; save(); t.setAttribute('aria-pressed', !S.excl.includes(d.excl)); $('#excl-note').innerHTML = exclNote(); return render(); }
+  if (d.lang) { if (d.lang === LANG) return; try { localStorage.setItem('pulsosano.lang', d.lang); } catch (e) { /* sin almacenamiento */ } return location.reload(); }
   if (d.bpat) { S.bpat = d.bpat; save(); $$('button', t.closest('.seg')).forEach(b => b.setAttribute('aria-pressed', b === t)); $('#bpat-note').textContent = BPAT[d.bpat][4]; return; }
   if (d.swap) return openSwap(d.swap);
-  if (d.swapto) { const k = dkey(); S.swap ||= {}; S.swap = { [k]: S.swap[k] || {} }; if (d.swapto === d.orig) delete S.swap[k][d.orig]; else S.swap[k][d.orig] = d.swapto; save(); closeSheet(); toast(d.swapto === d.orig ? 'Plan original recuperado.' : `Hoy harás ${EX[d.swapto].name.toLowerCase()}.`); return render(); }
+  if (d.swapto) { const k = dkey(); S.swap ||= {}; S.swap = { [k]: S.swap[k] || {} }; if (d.swapto === d.orig) delete S.swap[k][d.orig]; else S.swap[k][d.orig] = d.swapto; save(); closeSheet(); toast(d.swapto === d.orig ? 'Plan original recuperado.' : `${tr('Hoy harás')} ${tr(EX[d.swapto].name).toLowerCase()}.`); return render(); }
   if (d.excat) { exCat = d.excat; return render(); }
   if (d.dweek != null) { dietDay = dietDay % 7 + 7 * +d.dweek; return render(); }
   if (d.srv) { const k = dkey(); (S.dash[k] ||= {})[d.srv] = clamp((S.dash[k][d.srv] || 0) + +d.n, 0, 12); save(); return render(); }
@@ -1109,7 +1145,7 @@ document.addEventListener('submit', e => {
     const s = +$('#bp-s').value, d = +$('#bp-d').value, p = +$('#bp-p').value || null, t = new Date($('#bp-t').value).getTime() || Date.now();
     if (!(s >= 60 && s <= 260 && d >= 30 && d <= 160) || d >= s) return toast('Revisa los valores: la sistólica debe ser mayor que la diastólica.');
     S.bp.push({ t, s, d, p, n: $('#bp-n').value.trim() }); save(); closeSheet(); tab = 'bp'; render();
-    const c = bpClass(s, d); toast(`${s}/${d} guardada · ${c.t}`);
+    const c = bpClass(s, d); toast(`${s}/${d} · ${c.t}`);
   }
 });
 document.addEventListener('change', e => {

@@ -354,3 +354,5 @@ button.task { font: inherit; color: inherit; }
 .acc[open] summary::after { content: "−"; background: var(--brand-soft); color: var(--brand); }
 .accb { display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; min-width: 0; }
 .lsteps.small { font-size: .9rem; color: var(--ink-2); } .lsteps.small b { color: var(--ink); }
+
+.langseg { align-self: flex-start; } .langseg button { padding-inline: 14px; }

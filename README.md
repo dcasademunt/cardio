@@ -11,6 +11,8 @@ Webapp (PWA) para móvil que ayuda a mantener la tensión arterial estable con e
 
 Fuentes principales: Edwards et al. (Br J Sports Med 2023), Nemoto et al. (Mayo Clin Proc 2007), plan DASH del NHLBI, guía ESC 2024 y protocolo de medida en casa 7-2-2. La lista completa con enlaces está en la app (Perfil → Ver fuentes científicas).
 
+Disponible en castellano y catalán: los textos se escriben en castellano en `app.js` y `ca.js` contiene su traducción (clave: el texto original con las cifras sustituidas por `#`). Un texto nuevo sin entrada en `ca.js` se muestra en castellano.
+
 Sin dependencias ni compilación: HTML, CSS y JavaScript. Los datos se guardan solo en el dispositivo (`localStorage`).
 
 ## Uso
