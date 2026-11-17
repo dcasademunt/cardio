@@ -15,7 +15,7 @@ const nf = (n, d = 1) => Number(n).toLocaleString('es-ES', { minimumFractionDigi
    Los textos se escriben en castellano. En catalán se traducen al pintarlos, con el diccionario de ca.js.
    Las cifras se sustituyen por # para que una sola entrada sirva con cualquier número. */
 const LANG = (() => { try { const v = localStorage.getItem('pulsosano.lang'); if (v) return v; } catch (e) { /* sin almacenamiento */ } return (navigator.language || '').toLowerCase().startsWith('ca') ? 'ca' : 'es'; })();
-const LOC = LANG === 'ca' ? 'ca-ES' : LOC;
+const LOC = LANG === 'ca' ? 'ca-ES' : 'es-ES';
 const DICT = LANG === 'ca' ? (window.PULSO_CA || {}) : null, MISS = new Set();
 document.documentElement.lang = LANG;
 function trKey(str) {
@@ -272,6 +272,23 @@ const EX = {
     safe: 'Si te mareas, vuelve a tu respiración normal.',
     cues: [], build: () => [{ label: 'Respira con el círculo', secs: 300, type: 'work', anim: 'breath' }],
   },
+  snack: {
+    name: 'Snack de ejercicio tras comer', cat: 'str', anim: 'lunge', fx: 'glucosa', rpe: [4, 6],
+    why: 'Tres minutos de trabajo de piernas después de comer hacen que el músculo capte glucosa de la sangre y suavizan la subida de azúcar. Sirve como pausa activa varias veces al día.',
+    steps: ['1 minuto de sentadillas a silla.', '1 minuto de zancadas alternas, con apoyo si lo necesitas.', '1 minuto de elevación de talones.', 'Hazlo entre 15 y 30 minutos después de las comidas principales.'],
+    safe: 'Ritmo cómodo y sin aguantar el aire. Si las zancadas molestan en la rodilla, cámbialas por marcha en el sitio.',
+    cues: ['Suelta el aire al subir', 'Rodilla alineada con el pie', 'Ritmo constante'],
+    build: () => [['squat', 'Sentadilla a silla'], ['lunge', 'Zancadas alternas'], ['calf', 'Elevación de talones']].map(([a, n], i) => ({ label: n, secs: 60, type: 'work', anim: a, sub: `Parte ${i + 1} de 3` })),
+  },
+  hiit: {
+    name: 'Intervalos intensos en bici', cat: 'aer', anim: 'bikefast', fx: '−4 mmHg', ref: 'edwards', rpe: [3, 9], adv: true,
+    why: 'Esfuerzos muy cortos e intensos con las piernas. El entrenamiento por intervalos de alta intensidad baja de media 4 mmHg la sistólica y mejora mucho el uso de la glucosa en poco tiempo.',
+    steps: ['5 minutos de pedaleo suave para calentar.', '20 segundos al máximo que puedas mantener con seguridad.', 'Casi 3 minutos muy suaves para recuperar. Repite 3 veces.', 'Como mucho 2 o 3 días por semana, nunca en días seguidos.'],
+    safe: 'Solo para quien ya lleva semanas activo y con el visto bueno de su médico. En bici estática, nunca en carretera. Para si notas mareo, dolor en el pecho o falta de aire anormal.',
+    cues: ['Fuerte con las piernas, hombros sueltos', 'No aguantes el aire'],
+    build: () => [{ label: 'Calentamiento suave', secs: 300, type: 'rest', anim: 'bike' },
+      ...Array.from({ length: 3 }, (_, i) => [{ label: 'A tope', secs: 20, type: 'work', anim: 'bikefast', sub: `Intervalo ${i + 1} de 3` }, { label: 'Muy suave', secs: 160, type: 'rest', anim: 'bike', sub: 'Recupera el aliento' }]).flat()],
+  },
   stretch: {
     name: 'Estiramientos suaves', cat: 'mov', anim: 'st_up', fx: 'movilidad', rpe: [2, 3],
     why: 'Mantienen las articulaciones listas para moverte cada día y ayudan a soltar tensión después del ejercicio.',
@@ -296,11 +313,12 @@ function cardio(min, anim) {
     { label: 'Ritmo vivo · Zona 2', secs: (min - 2 * w) * 60, type: 'work', anim },
     { label: 'Vuelta a la calma', secs: w * 60, type: 'rest', anim }];
 }
-const SHORT = { wallsit: 'Isométrico pared', grip: 'Isométrico mano', walk: 'Caminata', iwalk: 'Intervalos', bike: 'Bici', indoor: 'Marcha en casa', strength: 'Fuerza', taichi: 'Tai chi', breath: 'Respiración', stretch: 'Estiramientos' };
-const AER = ['walk', 'iwalk', 'bike', 'indoor'];
+const SHORT = { wallsit: 'Isométrico pared', grip: 'Isométrico mano', walk: 'Caminata', iwalk: 'Intervalos', bike: 'Bici', indoor: 'Marcha en casa', snack: 'Snack de piernas', hiit: 'Intervalos intensos', strength: 'Fuerza', taichi: 'Tai chi', breath: 'Respiración', stretch: 'Estiramientos' };
+const AER = ['walk', 'iwalk', 'bike', 'indoor', 'hiit'];
+const PLANNED = ['wallsit', 'grip', 'walk', 'iwalk', 'indoor', 'bike', 'strength', 'taichi', 'breath', 'stretch'];
 /* Sustituciones: primero las equivalentes (mismo tipo de estímulo), después las alternativas suaves */
 const ALT = { walk: ['bike', 'indoor', 'iwalk'], bike: ['walk', 'indoor', 'iwalk'], iwalk: ['walk', 'bike', 'indoor'], indoor: ['walk', 'bike', 'iwalk'], wallsit: ['grip', 'walk'], grip: ['wallsit', 'walk'],
-  strength: ['wallsit', 'grip', 'taichi'], taichi: ['stretch', 'breath', 'walk'], breath: ['taichi', 'stretch'], stretch: ['taichi', 'breath'] };
+  snack: ['strength', 'wallsit'], hiit: ['bike', 'iwalk', 'walk'], strength: ['wallsit', 'grip', 'taichi'], taichi: ['stretch', 'breath', 'walk'], breath: ['taichi', 'stretch'], stretch: ['taichi', 'breath'] };
 const sameKind = (a, b) => { const g = c => (c === 'mov' ? 'relax' : c); return g(EX[a].cat) === g(EX[b].cat); };
 const swapNote = (from, to) => sameKind(from, to) ? (to === 'iwalk' ? 'Equivalente: mismo tipo, con bloques rápidos y lentos' : EX[to].cat === 'aer' ? 'Equivalente: mismo tipo y mismos minutos' : 'Equivalente: mismo tipo de ejercicio')
   : from === 'strength' && EX[to].cat === 'iso' ? 'Parecido: trabaja el músculo de forma estática' : EX[to].cat === 'aer' ? (EX[from].cat === 'iso' ? 'Distinto: suma minutos aeróbicos, no sustituye el isométrico' : 'Distinto: paseo aeróbico suave') : 'Alternativa suave para mantener el hábito';
@@ -363,9 +381,9 @@ function ik(a, b, l1, l2, dir) {
 }
 const mix = (a, b, s) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
 const G = 172;
-const BPAT = { '4-6': [4, 0, 6, 'Lenta 4-6', 'La más sencilla: unas 6 respiraciones por minuto.'], '4-4-8': [4, 4, 8, 'Calma 4-4-8', 'Exhalación larga para frenar el pulso. Útil al acostarte o si te despiertas de madrugada.'], '4-5-6': [4, 5, 6, 'Relajación 4-5-6', 'Para 3–5 minutos cuando notes tensión o nervios.'] };
+const BPAT = { '4-6': [4, 0, 6, 'Lenta 4-6', 'La más sencilla: unas 6 respiraciones por minuto.'], '4-4-8': [4, 4, 8, 'Calma 4-4-8', 'Exhalación larga para frenar el pulso. Útil al acostarte o si te despiertas de madrugada.'], '4-5-6': [4, 5, 6, 'Relajación 4-5-6', 'Para 3–5 minutos cuando notes tensión o nervios.'], zumbido: [4, 0, 6, 'Zumbido', 'Como la 4-6, pero exhalando con un zumbido suave de abeja («mmm») y la boca cerrada. Unos 10 minutos.'] };
 function breathState(t) { const [a, h, o] = BPAT[S.bpat] || BPAT['4-6'], c = t % (a + h + o);
-  return c < a ? { s: c / a, txt: 'Inhala por la nariz…', left: a - c } : c < a + h ? { s: 1, txt: 'Mantén el aire, sin forzar…', left: a + h - c } : { s: 1 - (c - a - h) / o, txt: 'Exhala despacio…', left: a + h + o - c }; }
+  return c < a ? { s: c / a, txt: 'Inhala por la nariz…', left: a - c } : c < a + h ? { s: 1, txt: 'Mantén el aire, sin forzar…', left: a + h - c } : { s: 1 - (c - a - h) / o, txt: S.bpat === 'zumbido' ? 'Exhala con un zumbido suave…' : 'Exhala despacio…', left: a + h + o - c }; }
 function pose(anim, t) {
   const pp = T => (1 - Math.cos(2 * Math.PI * t / T)) / 2;
   const b = 1.2 * Math.sin(t * 1.6);
@@ -381,7 +399,9 @@ function pose(anim, t) {
       return { sh: [100 + sh, 74 + 4 * (1 - s)], hip: [100 + sh, 114 + 4 * (1 - s)], f: [[88, G], [114, G]], h: [mix([118, 112], [132, 62], s), mix([114, 114], [128, 64], s)] }; }
     case 'flow2': { const s = pp(8);
       return { sh: mix([96, 75], [106, 75], s), hip: mix([94, 116], [106, 116], s), f: [[84, G], [120, G]], h: [mix([108, 92], [146, 84], s), mix([106, 96], [144, 88], s)] }; }
-    case 'bike': { const ph = 2 * Math.PI * t / 1.3, c = [100, 150];
+    case 'lunge': { const s = pp(3.4);
+      return { sh: mix([100, 72], [100, 88], s), hip: mix([100, 112], [100, 128], s), f: [mix([104, G], [128, G], s), mix([97, G], [72, G], s)], h: [[112, 108 + 14 * s], [90, 108 + 14 * s]] }; }
+    case 'bike': case 'bikefast': { const ph = 2 * Math.PI * t / (anim === 'bikefast' ? .55 : 1.3), c = [100, 150];
       return { sh: [116, 72 + b * .5], head: [125, 56 + b * .5], hip: [86, 104], f: [[c[0] + 11 * Math.cos(ph), c[1] + 11 * Math.sin(ph)], [c[0] - 11 * Math.cos(ph), c[1] - 11 * Math.sin(ph)]], h: [[138, 100], [138, 100]],
         props: `<circle class="prop" cx="52" cy="148" r="22"/><circle class="prop" cx="152" cy="148" r="22"/><path class="prop" d="M52 148L86 112L100 150L52 148M86 112L132 112L152 148M132 112L138 100M78 108H94"/>` }; }
     case 'squat': { const s = pp(3.2);
@@ -499,6 +519,23 @@ function download(name, text, type) {
 }
 
 /* ---------- Tensión ---------- */
+/* Presión de pulso (sistólica − diastólica) y patrones aislados */
+function bpExtra(s, d) {
+  const pp = s - d;
+  return { pp, ppHigh: pp > 60, iso: s < 130 && d >= 90 ? 'Hipertensión diastólica aislada' : s >= 140 && d < 90 ? 'Hipertensión sistólica aislada' : '' };
+}
+function openTriage(s, d, step) {
+  const sym = ['Dolor u opresión en el pecho', 'Falta de aire brusca', 'Debilidad o adormecimiento en la cara, un brazo o una pierna', 'Dificultad para hablar o visión doble', 'Un dolor de cabeza súbito, el peor de tu vida'];
+  if (step === 'yes') return sheet('Pide ayuda ahora', `<div class="note crit" style="font-size:1rem"><b>Llama al 112 ahora.</b> Tensión alta con esos síntomas necesita atención urgente.</div>
+    <div class="card"><p class="bpnow"><span class="v">112</span></p><ul class="lsteps small"><li>No conduzcas tú. Siéntate o túmbate con la cabeza algo elevada.</li><li>Di que tienes la tensión en <b>${s}/${d}</b> y qué síntoma notas.</li><li>No tomes medicación extra por tu cuenta.</li></ul></div>`);
+  if (step === 'no') return sheet('Sin síntomas: calma', `<p class="muted">Una subida puntual sin síntomas no es una urgencia. La tensión sube con el dolor, el estrés, el ejercicio, el café o una discusión, y vuelve a bajar.</p>
+    <div class="card"><ol class="lsteps"><li><b>Siéntate y respira lento 5 minutos.</b><br><button class="btn sm" style="margin-top:8px" data-act="calmbreath">${I.play} Respiración 4-4-8</button></li><li><b>Repite la medida.</b> Anota la segunda.</li>
+      <li><b>Mide mañana y noche durante 5–7 días.</b> Lo que cuenta es la media: si en casa es de 135/85 o más, pide cita con tu médico.</li></ol></div>
+    <div class="note warn">Si tras el reposo sigue en 180/110 o más, contacta con tu centro de salud hoy mismo. Si aparece algún síntoma de alarma, llama al 112.</div>`);
+  sheet('Tu medida es alta', `<div class="bpnow"><span class="v">${s}/${d}</span><span class="muted">mmHg</span></div><p><b>¿Notas ahora alguno de estos síntomas?</b></p>
+    <div class="card"><ul class="lsteps small">${sym.map(x => `<li>${x}</li>`).join('')}</ul></div>
+    <button class="btn danger block" data-triage="yes" data-s="${s}" data-d="${d}">Sí, noto alguno</button><button class="btn block" data-triage="no" data-s="${s}" data-d="${d}">No, ninguno</button>`);
+}
 function bpClass(s, d) {
   if (s >= 180 || d >= 110) return { t: 'Hipertensión grado 3', c: 'crit', i: '▲▲' };
   if (s >= 160 || d >= 100) return { t: 'Hipertensión grado 2', c: 'crit', i: '▲' };
@@ -587,6 +624,8 @@ const RECIPES = [
   ['Pollo a la plancha con guacamole y ensalada verde', '20 min', ['180 g de pechuga de pollo', 'Medio aguacate maduro', 'Un cuarto de tomate picado y zumo de medio limón', 'Canónigos, espinacas y lechuga', '1 cucharada de aceite de oliva virgen extra'],
     ['Aplasta el aguacate con un tenedor y mézclalo con el tomate, el limón y pimienta.', 'Haz el pollo a la plancha a fuego medio, bien hecho pero jugoso.', 'Sirve con el guacamole y la ensalada aliñada con el aceite.'], 'Cena de proteína, verdura y grasa saludable, sin harinas: digestión tranquila y saciedad para la noche.'],
 ];
+const TOP10 = [['Ajo crudo', 'Alicina: ayuda a relajar los vasos'], ['Plátano', 'Potasio: ayuda al riñón a eliminar sodio'], ['Espinaca y acelga', 'Nitratos y magnesio: el cuerpo los convierte en óxido nítrico, que dilata las arterias'], ['Yogur y kéfir', 'Fermentos y calcio: cuidan la flora intestinal'], ['Avena integral', 'Betaglucanos: frenan la absorción de azúcar y colesterol'],
+  ['Remolacha', 'Muy rica en nitratos: su efecto se nota a las 2–4 horas'], ['Aguacate', 'Grasa monoinsaturada y magnesio'], ['Frutos rojos', 'Antocianinas: favorecen el óxido nítrico'], ['Pescado azul', 'Omega-3: baja los triglicéridos'], ['Chía y lino', 'Omega-3 vegetal y fibra soluble']];
 const TIPS = [['Cada 2.000 pasos más al día restan unos 4 mmHg de sistólica. Sube por la escalera y baja una parada antes.', 'steps'],
   ['Los isométricos funcionan con 3 sesiones por semana. Más importante que la intensidad es no saltarte ninguna.', 'edwards'],
   ['La guía europea de 2024 recomienda menos de 2 g de sodio al día: unos 5 g de sal, contando la que ya llevan los alimentos.', 'esc'],
@@ -595,6 +634,7 @@ const TIPS = [['Cada 2.000 pasos más al día restan unos 4 mmHg de sistólica. 
   ['El plan DASH baja la tensión por sí solo, incluso antes de reducir la sal. Empieza por añadir una fruta y una verdura a cada comida.', 'dash'],
   ['La peor mezcla para tus triglicéridos es grasa con harinas o azúcares rápidos: fritos, bollería y rebozados. Sepáralos o evítalos.', 'dash'],
   ['Bajar 10 mmHg la sistólica reduce alrededor de un 20 % el riesgo de infarto, ictus y otros eventos graves. Cada punto cuenta.', 'esc'],
+  ['Después de comer, 3 minutos de sentadillas, zancadas y talones ayudan a que el azúcar no se dispare. Lo tienes como «Snack de ejercicio».', 'edwards'],
   ['Si hoy no tienes fuerzas, 10 minutos de movimiento lento también cuentan y ayudan a mantener el hábito.', 'taichi']];
 
 /* ---------- Vistas ---------- */
@@ -644,7 +684,7 @@ function vEj() {
     <p class="small muted">Entre el 60 y el 70 % de tu frecuencia máxima estimada (${c.fcm} lpm). Sin pulsómetro: debes poder hablar, pero no cantar.</p></section>
     <div class="chips" role="group" aria-label="Tipo de ejercicio">${[['all', 'Todos'], ['iso', 'Isométrico'], ['aer', 'Aeróbico'], ['str', 'Fuerza'], ['relax', 'Calma y movilidad']].map(([k, t]) => `<button class="chip" data-excat="${k}" aria-pressed="${exCat === k}">${t}</button>`).join('')}</div>
     ${list.map(([id, e]) => `<button class="card excard" data-open="${id}"><div class="figbox cat-${e.cat}">${fig(e.anim)}</div><div><div class="row wrap" style="gap:6px"><span class="pill cat-${e.cat}">${CAT[e.cat]}</span><span class="pill">${exMin(id)} min</span>${e.ref ? `<span class="pill">${e.fx}</span>` : ''}</div><h3 style="margin:8px 0 2px">${e.name}</h3><p>${e.steps[0]}</p></div></button>`).join('')}
-    <button class="card excard" data-act="calm"><div class="figbox cat-relax">${fig('breath')}</div><div><span class="pill cat-relax">Guía</span><h3 style="margin:8px 0 2px">Calma y sueño</h3><p>Técnicas para frenar el estrés y qué hacer si te despiertas de madrugada.</p></div></button>
+    <button class="card excard" data-act="calm"><div class="figbox cat-relax">${fig('breath')}</div><div><span class="pill cat-relax">Guía</span><h3 style="margin:8px 0 2px">Calma, sueño y calor</h3><p>Técnicas para frenar el estrés, qué hacer si te despiertas de madrugada y cómo usar la sauna.</p></div></button>
     <section class="card flat"><h3>Para y pide ayuda (112) si notas</h3><p class="small muted">Dolor opresivo en el pecho, falta de aire en reposo, pérdida de fuerza o del habla, o un dolor de cabeza brusco e intenso. Con mareo o dolor articular agudo, detén la sesión y descansa.</p>
       <p class="small muted">Las cifras en mmHg son la bajada media de la sistólica en los estudios tras varias semanas de práctica. Tu resultado puede ser distinto.</p><button class="btn ghost sm" data-act="refs">Ver fuentes</button></section>`;
 }
@@ -657,20 +697,28 @@ function ampa() {
 }
 function vBP() {
   const bp = lastBP(), a7 = bpAvg(7), a30 = bpAvg(30), list = bpSorted().reverse(), A = ampa();
-  const hi = bp && (bp.s >= 180 || bp.d >= 110);
+  const hi = bp && (bp.s >= 180 || bp.d >= 110), X = bp && bpExtra(bp.s, bp.d), r7 = S.bp.filter(x => x.t >= Date.now() - 7 * 864e5), pp7 = r7.length ? Math.round(r7.reduce((a, x) => a + x.s - x.d, 0) / r7.length) : null;
   return `${hi ? `<div class="note crit"><b>Tu última medida es muy alta (${bp.s}/${bp.d}).</b> Descansa 5 minutos sentado y repite. Si sigue igual, llama a tu centro de salud. Con dolor en el pecho, falta de aire, visión borrosa o debilidad en un lado del cuerpo, llama al 112.</div>` : ''}
     <section class="card"><div class="row"><div class="grow"><p class="eyebrow">Última medida</p>${bp ? `<div class="bpnow"><span class="v">${bp.s}/${bp.d}</span><span class="muted">mmHg</span></div>` : '<p class="muted">Sin medidas todavía</p>'}</div>
       ${bp ? (c => `<span class="pill ${c.c}">${c.i} ${c.t}</span>`)(bpClass(bp.s, bp.d)) : ''}</div>
+      ${bp ? `<div class="row wrap" style="gap:6px"><span class="pill ${X.ppHigh ? 'warn' : ''}">${tr('Presión de pulso')} ${X.pp}</span>${X.iso ? `<span class="pill serious">${X.iso}</span>` : ''}${pp7 != null ? `<span class="pill ${pp7 > 60 ? 'warn' : ''}">${tr('Media 7 días')}: ${pp7}</span>` : ''}</div>
+        ${pp7 > 60 ? '<div class="note warn"><b>Tu presión de pulso media supera 60.</b> Es la diferencia entre la alta y la baja; cuando es amplia puede indicar arterias más rígidas. Coméntalo en tu próxima revisión.</div>' : ''}
+        ${X.iso === 'Hipertensión diastólica aislada' ? '<div class="note">La baja está alta aunque la alta sea normal. Es frecuente con sobrepeso, alcohol o poco movimiento, y necesita el mismo seguimiento que la hipertensión habitual.</div>' : ''}` : ''}
       <div class="grid2"><div class="note"><span class="eyebrow">Media 7 días</span><br><b class="num" style="font-size:1.2rem">${a7 ? `${a7.s}/${a7.d}` : '—'}</b></div><div class="note"><span class="eyebrow">Media 30 días</span><br><b class="num" style="font-size:1.2rem">${a30 ? `${a30.s}/${a30.d}` : '—'}</b></div></div>
       <button class="btn" data-act="bp-add">${I.plus} Anotar tensión</button></section>
     <section class="card"><div class="row"><h2 class="grow">Semana de control</h2>${A.avg ? (c => `<span class="pill ${A.avg.s >= 135 || A.avg.d >= 85 ? 'serious' : 'good'}">${A.avg.s}/${A.avg.d}</span>`)() : `<span class="pill">${A.n} de 7 días</span>`}</div>
       <div class="ampa">${A.days.map(x => `<div class="${A.first && dkey(x.d) === dkey(A.first) ? 'skip' : ''}">${DAY1[x.d.getDay()]}<i class="${x.am ? 'on' : ''}" title="Mañana"></i><i class="${x.pm ? 'on' : ''}" title="Noche"></i></div>`).join('')}</div>
-      <p class="small muted">Es la medida que más valora tu médico: 2 tomas por la mañana y 2 por la noche durante 7 días. El primer día se descarta (atenuado) y se hace la media del resto. ${A.avg ? `Tu media es <b>${A.avg.s}/${A.avg.d}</b>; en casa, 135/85 o más indica hipertensión.` : 'Verás tu media cuando tengas 4 días con medidas.'}</p>${src('ampa')}</section>
+      <p class="small muted">Es la medida que más valora tu médico: 2 tomas por la mañana y 2 por la noche durante 7 días. El primer día se descarta (atenuado) y se hace la media del resto. ${A.avg ? `Tu media es <b>${A.avg.s}/${A.avg.d}</b>; en casa, 135/85 o más indica hipertensión.` : 'Verás tu media cuando tengas 4 días con medidas.'}${A.avg && (A.avg.s >= 135 || A.avg.d >= 85) ? ' <b>Con esta media conviene pedir cita con tu médico.</b>' : ''}</p>${src('ampa')}</section>
     <section class="card"><h2>Evolución</h2>
       <div class="seg" role="group" aria-label="Periodo">${[[7, '7 días'], [30, '30 días'], [90, '3 meses'], [0, 'Todo']].map(([d, t]) => `<button data-range="${d}" aria-pressed="${bpRange === d}">${t}</button>`).join('')}</div>${bpChart()}</section>
     <section class="card"><div class="row"><h2 class="grow">Historial</h2>${list.length ? '<button class="btn sm ghost" data-act="bp-csv">Exportar</button>' : ''}</div>
       <div class="list">${list.length ? list.slice(0, 40).map(x => { const c = bpClass(x.s, x.d); return `<div class="li"><div class="grow"><b class="num">${x.s}/${x.d}</b>${x.p ? ` <span class="muted small">${x.p} lpm</span>` : ''}<br><span class="small muted">${new Date(x.t).toLocaleString(LOC, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${x.n ? ' · ' + esc(x.n) : ''}</span></div><span class="pill ${c.c}">${c.i} ${c.t}</span><button class="x" data-del="${x.t}" aria-label="Borrar medida">×</button></div>`; }).join('') : '<p class="muted small">Tus medidas aparecerán aquí.</p>'}</div></section>
-    <section class="card flat"><h3>Cómo medir bien</h3><ol class="small muted" style="margin:0;padding-left:20px;display:grid;gap:5px"><li>Sin café, tabaco ni ejercicio en los 30 minutos previos; vejiga vacía.</li><li>Sentado 5 minutos, espalda apoyada, pies en el suelo y sin cruzar las piernas.</li><li>Manguito en el brazo desnudo, a la altura del corazón. Mejor tensiómetro de brazo que de muñeca.</li><li>Sin hablar. Dos medidas separadas 1 minuto; anota la segunda.</li></ol>
+    <section class="card"><h2>Entender tus cifras</h2>
+      <details class="acc"><summary>¿Pico puntual o hipertensión?</summary><div class="accb"><p class="small muted">Un <b>pico</b> es una subida pasajera por dolor, estrés, ejercicio, una comida copiosa o café: es una respuesta normal y baja sola. La <b>hipertensión</b> es tener la media alta de forma mantenida, día tras día. Por eso una cifra suelta dice poco y la media de 5–7 días dice mucho.</p></div></details>
+      <details class="acc"><summary>Presión de pulso</summary><div class="accb"><p class="small muted">Es la alta menos la baja. Con 130/80 es 50. Lo habitual es entre 40 y 60. Una diferencia amplia y mantenida, por ejemplo 160/60, apunta a arterias más rígidas o a un problema de válvula, y merece consulta.</p></div></details>
+      <details class="acc"><summary>Categorías de la guía europea de 2024</summary><div class="accb"><div class="scroll-x"><table class="prog"><tr><th>Categoría</th><th>En consulta</th></tr><tr><td><b>No elevada</b></td><td>menos de 120/70</td></tr><tr><td><b>Elevada</b></td><td>120–139 / 70–89</td></tr><tr><td><b>Hipertensión</b></td><td>140/90 o más</td></tr></table></div>
+        <p class="small muted">En casa, hipertensión es una media de 135/85 o más. Durante el sueño lo normal es que baje: más de 120/70 de noche se considera hipertensión nocturna, y solo se detecta con un registro de 24 horas.</p></div></details></section>
+    <section class="card flat"><h3>Cómo medir bien</h3><ol class="small muted" style="margin:0;padding-left:20px;display:grid;gap:5px"><li>Sin café, tabaco ni ejercicio en los 30 minutos previos; vejiga vacía.</li><li>Sentado 5 minutos, espalda apoyada, pies en el suelo y sin cruzar las piernas.</li><li>Manguito en el brazo desnudo, dos o tres dedos por encima del pliegue del codo y a la altura del corazón. Mejor tensiómetro de brazo validado que de muñeca.</li><li>Sin hablar. Dos medidas separadas 1 minuto; anota la segunda.</li></ol>
       ${vids('bp')}<p class="small muted">La guía europea de 2024 llama «presión elevada» a 120–139/70–89 e hipertensión a 140/90 o más en consulta. Tu médico decide tu objetivo.</p>${src('esc')}</section>`;
 }
 function vDieta() {
@@ -695,6 +743,10 @@ function vDieta() {
       <div class="meal">${m.map((x, i) => `<b>${names[i]}</b><span>${x}</span>`).join('')}</div>
       <p class="small muted">Cocina sin sal añadida y aliña con aceite de oliva, limón, ajo y especias. Ajusta las cantidades a tus raciones.</p></section>
     <section class="card"><h2>Recetas del plan</h2>${RECIPES.map(([t, time, ing, steps, why]) => `<details class="acc"><summary><span style="flex:1;min-width:0">${t}</span><span class="pill">${time}</span></summary><div class="accb"><p class="lbl">Ingredientes</p><ul class="lsteps small">${ing.map(x => `<li>${x}</li>`).join('')}</ul><p class="lbl">Preparación</p><ol class="lsteps small">${steps.map(x => `<li>${x}</li>`).join('')}</ol><div class="note">${why}</div></div></details>`).join('')}</section>
+    <section class="card"><h2>Diez alimentos que cuidan tus arterias</h2><table class="prog">${TOP10.map(([a, b], i) => `<tr><td><b>${a}</b><br><span class="small muted">${b}</span></td></tr>`).join('')}</table>
+      <p class="small muted">Con enfermedad renal, consulta antes de aumentar los alimentos ricos en potasio.</p></section>
+    <section class="card"><h2>Infusiones y zumos</h2><table class="prog"><tr><td><b>Infusión de hibisco (flor de Jamaica)</b><br><span class="small muted">2–3 tazas al día, 10–15 minutos de reposo, sin azúcar. En varios ensayos baja la sistólica en torno a 7 mmHg. Tiene un efecto diurético suave: consulta si tomas diuréticos o tu tensión tiende a ser baja.</span></td></tr>
+      <tr><td><b>Zumo de remolacha</b><br><span class="small muted">Un vaso (unos 240 mL) natural, sin azúcar añadido. Baja la tensión unas horas gracias a sus nitratos. No es recomendable con piedras de oxalato en el riñón o enfermedad renal.</span></td></tr></table></section>
     <section class="card"><h2>Cómo combinar los alimentos</h2><div class="note warn"><b>La peor mezcla:</b> grasa con harinas o azúcares de absorción rápida: patatas fritas, bollería, rebozados y guisos industriales. Dispara los triglicéridos y favorece la grasa abdominal.</div>
       <ul class="lsteps small"><li><b>Hidratos lentos.</b> Legumbre, avena, fruta entera y cereal integral en lugar de pan blanco, arroz blanco y zumos. En la etiqueta, busca al menos 1 g de fibra por cada 5 g de hidratos.</li>
       <li><b>Verdura con mucha fibra soluble.</b> Espárragos, puerros, alcachofas, brócoli y col: alimentan la flora intestinal y ayudan a bajar el LDL.</li>
@@ -710,7 +762,7 @@ function vDieta() {
     <section class="card"><h2>Lista de la compra</h2>${Object.entries(SHOP).map(([t, items]) => `<h3>${t}</h3><div class="chips">${items.map(f => `<span class="tag">${f}</span>`).join('')}</div>`).join('')}</section>
     <section class="card flat"><h3>Cinco reglas que más bajan la tensión</h3><ol class="small muted" style="margin:0;padding-left:20px;display:grid;gap:6px">
       <li>Retira el salero y la pastilla de caldo; la mayor parte de la sal viene de alimentos procesados.</li><li>Fruta y verdura en todas las comidas: son tu fuente de potasio.</li><li>Legumbres 3–4 veces por semana y pescado azul 2 veces.</li>
-      <li>Alcohol: cuanto menos, mejor. Lo ideal es cero.</li><li>${c.lose ? `Bajar a ${nf(c.goalKg)} kg (un 5 %) ayuda: cada kilo perdido resta alrededor de 1 mmHg.` : 'Mantén tu peso actual: está en rango saludable.'}</li></ol>
+      <li>Alcohol: lo ideal es cero. En ningún caso más de 100 g a la semana, unas 10 consumiciones.</li><li>${c.lose ? `Bajar a ${nf(c.goalKg)} kg (un 5 %) ayuda: cada kilo perdido resta alrededor de 1 mmHg.` : 'Mantén tu peso actual: está en rango saludable.'}</li></ol>
       <p class="small muted">Con enfermedad renal o si tomas diuréticos, IECA o ARA-II, consulta antes de aumentar el potasio o usar sal baja en sodio.</p>${vids('dash')}</section>`;
 }
 function vPlan() {
@@ -760,8 +812,10 @@ function vPlan() {
       ${c.lose ? `<div class="bar"><i style="width:${clamp((wl[0]?.kg ?? S.profile.weight) > c.goalKg ? ((wl[0]?.kg ?? S.profile.weight) - S.profile.weight) / ((wl[0]?.kg ?? S.profile.weight) - c.goalKg) : 0, 0, 1) * 100}%"></i></div><p class="small muted">Objetivo: ${nf(c.goalKg)} kg, un 5 % menos, en unos 3 meses.</p>` : ''}
       <form id="wform" class="row"><div class="field grow"><label for="w-kg">Peso de hoy (kg)</label><input id="w-kg" type="number" inputmode="decimal" step="0.1" min="35" max="250" required placeholder="${S.profile.weight}"></div><button class="btn" style="align-self:end" type="submit">Guardar</button></form></section>
     <section class="card"><div class="row"><h2 class="grow">Analíticas</h2>${(S.labs || []).length ? `<span class="pill">${S.labs.length}</span>` : ''}</div>
-      ${(S.labs || []).length ? `<div class="list">${[...S.labs].sort((a, b) => b.t - a.t).slice(0, 5).map(x => `<div class="li"><div class="grow"><span class="small muted">${new Date(x.t).toLocaleDateString(LOC, { day: 'numeric', month: 'short', year: 'numeric' })}</span><div class="chips" style="margin-top:4px">${x.tg ? `<span class="pill ${x.tg < 150 ? 'good' : 'serious'}">TG ${x.tg}</span>` : ''}${x.ldl ? `<span class="pill ${x.ldl < 70 ? 'good' : x.ldl < 100 ? 'warn' : 'serious'}">LDL ${x.ldl}</span>` : ''}${x.apob ? `<span class="pill">ApoB ${x.apob}</span>` : ''}</div></div><button class="x" data-dellab="${x.t}" aria-label="Borrar analítica">×</button></div>`).join('')}</div>` : '<p class="small muted">Apunta aquí los resultados de tus análisis para ver cómo cambian con el plan.</p>'}
+      ${(S.labs || []).length ? `<div class="list">${[...S.labs].sort((a, b) => b.t - a.t).slice(0, 5).map(x => `<div class="li"><div class="grow"><span class="small muted">${new Date(x.t).toLocaleDateString(LOC, { day: 'numeric', month: 'short', year: 'numeric' })}</span><div class="chips" style="margin-top:4px">${x.tg ? `<span class="pill ${x.tg < 150 ? 'good' : 'serious'}">TG ${x.tg}</span>` : ''}${x.ldl ? `<span class="pill ${x.ldl < 70 ? 'good' : x.ldl < 100 ? 'warn' : 'serious'}">LDL ${x.ldl}</span>` : ''}${x.apob ? `<span class="pill">ApoB ${x.apob}</span>` : ''}${x.hdl ? `<span class="pill">HDL ${x.hdl}</span>` : ''}${x.glu ? `<span class="pill ${x.glu > 140 ? 'serious' : 'good'}">${tr('Glucosa tras comer')} ${x.glu}</span>` : ''}${x.a1c ? `<span class="pill ${x.a1c < 5.7 ? 'good' : x.a1c < 6.5 ? 'warn' : 'serious'}">HbA1c ${nf(x.a1c)} %</span>` : ''}${x.lpa ? `<span class="pill">Lp(a) ${x.lpa}</span>` : ''}${x.crp ? `<span class="pill">PCR ${nf(x.crp)}</span>` : ''}</div>${x.glu > 140 ? '<p class="small muted" style="margin-top:4px">Glucosa por encima de 140 tras comer: revisa las harinas y azúcares de esa comida y camina 10 minutos después.</p>' : ''}</div><button class="x" data-dellab="${x.t}" aria-label="Borrar analítica">×</button></div>`).join('')}</div>` : '<p class="small muted">Apunta aquí los resultados de tus análisis para ver cómo cambian con el plan.</p>'}
       <form id="labform" style="display:flex;flex-direction:column;gap:12px"><div class="grid3"><div class="field"><label for="lab-tg">Triglicéridos</label><input id="lab-tg" type="number" inputmode="numeric" min="20" max="2000" placeholder="mg/dL"></div><div class="field"><label for="lab-ldl">LDL</label><input id="lab-ldl" type="number" inputmode="numeric" min="10" max="500" placeholder="mg/dL"></div><div class="field"><label for="lab-apob">ApoB</label><input id="lab-apob" type="number" inputmode="numeric" min="10" max="400" placeholder="mg/dL"></div></div>
+        <details class="acc"><summary>Más valores</summary><div class="accb"><div class="grid3"><div class="field"><label for="lab-hdl">HDL</label><input id="lab-hdl" type="number" inputmode="numeric" min="5" max="200" placeholder="mg/dL"></div><div class="field"><label for="lab-glu">Glucosa tras comer</label><input id="lab-glu" type="number" inputmode="numeric" min="40" max="600" placeholder="mg/dL"></div><div class="field"><label for="lab-a1c">HbA1c</label><input id="lab-a1c" type="number" inputmode="decimal" step="0.1" min="3" max="18" placeholder="%"></div>
+          <div class="field"><label for="lab-lpa">Lp(a)</label><input id="lab-lpa" type="number" inputmode="numeric" min="0" max="500" placeholder="mg/dL"></div><div class="field"><label for="lab-crp">PCR ultrasensible</label><input id="lab-crp" type="number" inputmode="decimal" step="0.1" min="0" max="200" placeholder="mg/L"></div></div></div></details>
         <div class="row"><div class="field grow"><label for="lab-d">Fecha del análisis</label><input id="lab-d" type="date" value="${dkey()}" max="${dkey()}"></div><button class="btn" style="align-self:end" type="submit">Guardar</button></div></form>
       <details class="acc"><summary>Qué cifras buscar</summary><div class="accb">${LIPID_HTML}</div></details></section>
     <section class="card flat"><h3>Objetivos del mes</h3><ul class="small muted" style="margin:0;padding-left:20px;display:grid;gap:6px">
@@ -806,18 +860,27 @@ const vSplash = msg => `<div class="splash">${LOGO}<p class="muted">${msg}</p></
 const CALM_HTML = `<p class="small muted">El estrés mantenido y dormir mal mantienen activado el sistema nervioso simpático: sube el pulso y las arterias se ponen más rígidas. Estas técnicas activan el freno natural del cuerpo (nervio vago). Son un complemento: calman en el momento, y su efecto a largo plazo sobre la tensión es modesto.</p>
   <ul class="lsteps small"><li><b>Respiración lenta con exhalación larga.</b> Ritmos 4-6, 4-4-8 o 4-5-6, de 3 a 10 minutos. Es la técnica con más respaldo. La tienes guiada en Ejercicios.</li>
   <li><b>Agua fría en la cara.</b> Mójate mejillas y cuello unos segundos: el reflejo de inmersión baja el pulso.</li>
-  <li><b>Tararear o cantar suave</b> alargando los sonidos: prolonga la exhalación y relaja.</li>
+  <li><b>Tararear o respirar con zumbido.</b> Inhala 4 segundos y exhala 6 con un «mmm» suave, unos 10 minutos. Alarga la exhalación y relaja. Lo tienes como ritmo «Zumbido» en la respiración guiada.</li>
   <li><b>Masaje suave de la oreja.</b> Roza con la yema el lóbulo, la concha y detrás de la oreja, sin apretar, un par de minutos. La evidencia es escasa, pero es inocuo y a mucha gente le relaja.</li></ul>`;
 const SLEEP_HTML = `<p class="small muted">Dormir menos de 6–7 horas sube la tensión. Si te despiertas a menudo de madrugada, revisa estas tres causas frecuentes:</p>
   <ul class="lsteps small"><li><b>Ganas de orinar.</b> El líquido acumulado en las piernas vuelve a la circulación al tumbarte. Deja de beber 2 horas antes de acostarte, cena con poca sal y pon las piernas en alto 15–20 minutos antes de ir a la cama.</li>
   <li><b>Cena rica en azúcares o harinas refinadas.</b> Puede alterar el sueño en algunas personas. Prueba una cena con proteína, verdura y grasa saludable.</li>
+  <li><b>Microdespertar normal.</b> Entre ciclos de sueño de unos 90 minutos es normal despertarse un momento. Si te vuelves a dormir enseguida, no hay nada que corregir.</li>
   <li><b>Mente activada.</b> No mires el móvil. Respira 4-4-8 en la cama; si en 20 minutos no vuelves a dormirte, levántate a un sitio con luz suave hasta notar sueño.</li></ul>
   <p class="small muted">Si roncas fuerte, haces pausas al respirar o te levantas a orinar varias veces cada noche, coméntalo con tu médico: la apnea del sueño y la próstata son causas tratables.</p>`;
 const LIPID_HTML = `<p class="small muted">La tensión y las grasas de la sangre dañan las arterias juntas. El mismo plan de ejercicio y alimentación mejora las dos.</p>
   <div class="scroll-x"><table class="prog"><tr><th>Analítica</th><th>Orientación</th></tr><tr><td><b>Triglicéridos</b></td><td>por debajo de 150 mg/dL</td></tr><tr><td><b>Colesterol LDL</b></td><td>menos de 100 con riesgo moderado, menos de 70 con riesgo alto y menos de 55 con riesgo muy alto</td></tr><tr><td><b>ApoB</b></td><td>cuenta las partículas que forman placa; tu médico te dirá tu objetivo</td></tr></table></div>
   <p class="small muted">Cuanto más bajo se mantiene el LDL, menos crece la placa; con cifras en torno a 70 mg/dL o menos los estudios de imagen muestran que puede estabilizarse e incluso reducirse. Tu objetivo concreto depende de tu riesgo y lo fija tu médico.</p>
+  <p class="lbl">Qué se ha visto en la placa según el LDL</p>
+  <div class="scroll-x"><table class="prog"><tr><th>LDL (mg/dL)</th><th>En los estudios de imagen</th></tr><tr><td><b>Más de 80</b></td><td>la placa tiende a crecer</td></tr><tr><td><b>70–78</b></td><td>punto de inflexión: deja de crecer</td></tr><tr><td><b>Menos de 55</b></td><td>se reduce en unos 2 de cada 3 pacientes</td></tr><tr><td><b>Menos de 30</b></td><td>mayor reducción y cubierta más gruesa y estable</td></tr></table></div>
+  <p class="small muted">Son resultados de pacientes con tratamiento intensivo; no es un objetivo para todo el mundo. La placa es una lesión inflamatoria dentro de la pared de la arteria, con un núcleo graso blando: el tratamiento lo vacía y endurece su cubierta. Por eso, con estatinas potentes, el calcio en el TAC puede subir sin que la enfermedad empeore.</p>
+  <p class="small muted"><b>Glucosa tras las comidas:</b> superar a menudo 140 mg/dL daña el interior de las arterias. Se mejora con menos harinas y azúcares y moviéndote después de comer.</p>
   <p class="small muted">Bajar 10 mmHg la tensión sistólica reduce alrededor de un 20 % los infartos, ictus y otros eventos cardiovasculares graves.</p>`;
-function openCalm() { sheet('Calma y sueño', `<div class="card"><h3>Calmar el sistema nervioso</h3>${CALM_HTML}<button class="btn" data-open="breath">${I.play} Respiración guiada</button></div><div class="card"><h3>Dormir bien</h3>${SLEEP_HTML}</div>`); }
+const HEAT_HTML = `<p class="small muted">El calor dilata los vasos y baja la resistencia de las arterias, un efecto parecido al de un ejercicio suave. En estudios finlandeses, quienes usan la sauna con frecuencia tienen menos hipertensión; es una asociación, no una prueba de que la sauna sea la causa.</p>
+  <ul class="lsteps small"><li><b>Pauta habitual:</b> 2 a 4 sesiones por semana de 10–15 minutos a 60–80 °C. Un baño caliente de 15–20 minutos es una alternativa más suave.</li>
+  <li><b>Entra hidratado y sal despacio</b>: al levantarte la tensión puede bajar de golpe. Nada de alcohol.</li>
+  <li><b>No la uses</b> con tensión por encima de 180/110, angina o infarto reciente, estenosis aórtica, mareos al ponerte de pie o fiebre. Si tomas medicación para la tensión, pregunta antes a tu médico.</li></ul>`;
+function openCalm() { sheet('Calma, sueño y calor', `<div class="card"><h3>Calmar el sistema nervioso</h3>${CALM_HTML}<button class="btn" data-open="breath">${I.play} Respiración guiada</button></div><div class="card"><h3>Dormir bien</h3>${SLEEP_HTML}</div><div class="card"><h3>Sauna y baño caliente</h3>${HEAT_HTML}</div>`); }
 function landGuide() {
   const d = (t, body, open) => `<details class="acc" ${open ? 'open' : ''}><summary>${t}</summary><div class="accb">${body}</div></details>`;
   const tb = (head, rows) => `<div class="scroll-x"><table class="prog"><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map((c, i) => `<td>${i ? c : `<b>${c}</b>`}</td>`).join('')}</tr>`).join('')}</table></div>`;
@@ -845,6 +908,7 @@ function landGuide() {
     ${d('Colesterol y triglicéridos', LIPID_HTML)}
     ${d('Calmar el sistema nervioso', CALM_HTML)}
     ${d('Dormir bien', SLEEP_HTML)}
+    ${d('Sauna y baño caliente', HEAT_HTML)}
     ${d('Cuándo pedir ayuda urgente', `<p class="small muted"><b>Llama al 112</b> si con la tensión alta notas dolor opresivo en el pecho, falta de aire, debilidad o adormecimiento en un lado del cuerpo, dificultad para hablar, visión borrosa o un dolor de cabeza brusco e intenso.</p>
       <p class="small muted">Con 180/110 o más y sin síntomas: siéntate, descansa 5 minutos y repite. Si sigue igual, contacta con tu centro de salud ese mismo día.</p>`)}
   </section>`;
@@ -900,13 +964,14 @@ function openEx(id, min) {
   const e = EX[id], total = exMin(id, min), bp = lastBP(), iso = e.cat === 'iso', p = params();
   sheet(e.name, `<div class="card"><div class="cat-${e.cat}" style="height:200px;border-radius:14px">${fig(e.anim)}</div><div class="row wrap" style="gap:6px"><span class="pill cat-${e.cat}">${CAT[e.cat]}</span><span class="pill">${total} min</span>${e.ref ? `<span class="pill">${e.fx} sistólica</span>` : ''}</div><p>${e.why}</p>${e.ref ? src(e.ref) : ''}</div>
     <div class="card flat"><h3>Cómo se hace</h3><ol style="margin:0;padding-left:20px;display:grid;gap:6px">${e.steps.map(s => `<li>${s}</li>`).join('')}</ol>
-      ${id === 'wallsit' ? `<div class="note"><b>Tu sesión de hoy:</b> 4 × ${mmss(p.hold)} en ${DEPTH[p.ph]}.</div>` : ''}${id === 'breath' ? `<div><p class="lbl" style="margin-bottom:8px">Ritmo (inhalar – mantener – exhalar)</p><div class="seg">${Object.entries(BPAT).map(([k, v]) => `<button data-bpat="${k}" aria-pressed="${(S.bpat || '4-6') === k}">${k}</button>`).join('')}</div><p class="small muted" id="bpat-note" style="margin-top:8px">${(BPAT[S.bpat] || BPAT['4-6'])[4]}</p></div>` : ''}${id === 'iwalk' ? `<div class="note"><b>Tu sesión de hoy:</b> ${p.sets} bloques de 3 + 3 minutos.</div>` : ''}
+      ${id === 'wallsit' ? `<div class="note"><b>Tu sesión de hoy:</b> 4 × ${mmss(p.hold)} en ${DEPTH[p.ph]}.</div>` : ''}${id === 'breath' ? `<div><p class="lbl" style="margin-bottom:8px">Ritmo (inhalar – mantener – exhalar)</p><div class="seg">${Object.entries(BPAT).map(([k, v]) => `<button data-bpat="${k}" aria-pressed="${(S.bpat || '4-6') === k}">${k === 'zumbido' ? 'Zumbido' : k}</button>`).join('')}</div><p class="small muted" id="bpat-note" style="margin-top:8px">${(BPAT[S.bpat] || BPAT['4-6'])[4]}</p></div>` : ''}${id === 'iwalk' ? `<div class="note"><b>Tu sesión de hoy:</b> ${p.sets} bloques de 3 + 3 minutos.</div>` : ''}
       <div><p class="lbl">Esfuerzo que debes notar: ${e.rpe[0] === e.rpe[1] ? e.rpe[0] : e.rpe[0] + '–' + e.rpe[1]} sobre 10</p><div class="rpe" aria-hidden="true">${Array.from({ length: 10 }, (_, i) => `<i class="${i + 1 >= e.rpe[0] && i + 1 <= e.rpe[1] ? 'on' : ''}"></i>`).join('')}</div></div>
       <div class="note">${e.safe}</div></div>
     ${iso && bp && (bp.s >= 160 || bp.d >= 100) ? `<div class="note crit"><b>Tu última tensión fue ${bp.s}/${bp.d}.</b> Los isométricos la suben durante el esfuerzo. Con 160/100 o más, habla con tu médico antes de hacerlos y elige hoy caminar o respirar.</div>` : ''}
     ${VID[id] ? `<div class="card flat"><h3>Vídeos para ver la técnica</h3>${vids(id)}<a class="src" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.name)}" target="_blank" rel="noopener">Buscar más en YouTube</a></div>` : ''}
     ${e.gps ? `<label class="row card flat" style="flex-direction:row"><input type="checkbox" class="switch" id="use-gps" checked><span class="grow">Medir recorrido con GPS<br><span class="small muted">Suma los kilómetros a tu día. Mantén la pantalla encendida.</span></span></label>` : ''}
-    <button class="btn block" data-start="${id}" data-min="${min || ''}">${I.play} Empezar</button>`);
+    ${e.adv ? `<div class="note warn"><b>Ejercicio avanzado.</b> ${progWeek() < 5 ? 'Espera a llevar al menos 4 semanas de programa. ' : ''}Consulta antes con tu médico si tienes hipertensión, tomas medicación o hace tiempo que no haces esfuerzos intensos.</div>` : ''}
+    ${e.adv && bp && (bp.s >= 160 || bp.d >= 100) ? `<div class="note crit"><b>Hoy no:</b> tu última tensión fue ${bp.s}/${bp.d}. Con 160/100 o más no hagas esfuerzos máximos.</div>` : `<button class="btn block" data-start="${id}" data-min="${min || ''}">${I.play} Empezar</button>`}`);
 }
 function openSwap(orig) {
   const k = dkey(), today = tasksFor(), cur = today.find(t => (t.orig || t.id) === orig), base = tasksFor(new Date(), undefined, true).find(t => t.id === orig);
@@ -941,7 +1006,7 @@ function openProfile() {
       <div class="card flat"><p class="eyebrow">Zona 2</p><b class="num" style="font-size:1.25rem">${c.z2[0]}–${c.z2[1]}</b><span class="small muted">lpm</span></div></div>
     <form id="pform" class="card">${profileForm(S.profile)}<button class="btn block" type="submit">Guardar cambios</button></form>
     <div class="card"><h3>Ejercicios de mi plan</h3><p class="small muted">Desmarca los que no puedas o no quieras hacer nunca. El plan los sustituye por el más parecido, todos los días.</p>
-      <div class="chips" role="group" aria-label="Ejercicios de mi plan">${Object.keys(EX).map(id => `<button class="chip" data-excl="${id}" aria-pressed="${!(S.excl || []).includes(id)}">${SHORT[id]}</button>`).join('')}</div><p class="small muted" id="excl-note">${exclNote()}</p></div>
+      <div class="chips" role="group" aria-label="Ejercicios de mi plan">${PLANNED.map(id => `<button class="chip" data-excl="${id}" aria-pressed="${!(S.excl || []).includes(id)}">${SHORT[id]}</button>`).join('')}</div><p class="small muted" id="excl-note">${exclNote()}</p></div>
     <div class="card"><h3>Idioma</h3>${langSeg()}</div>
     <div class="card flat"><label class="row"><input type="checkbox" class="switch" id="snd" ${S.sound ? 'checked' : ''}><span class="grow">Sonidos en ejercicios y avisos</span></label>
       <button class="btn line" data-act="restart">Reiniciar el programa de 12 semanas</button><button class="btn danger" data-act="wipe">Borrar todos mis datos</button></div>
@@ -1085,6 +1150,7 @@ document.addEventListener('click', e => {
   if (d.toggle) { const k = dkey(); if (d.toggle in doneOn(k)) { delete S.done[k][d.toggle]; save(); } else { setDone(d.toggle, +d.total); beep(880, .12); buzz(60); } return render(); }
   if (d.range != null) { bpRange = +d.range; return render(); }
   if (d.excl) { const a = S.excl || []; S.excl = a.includes(d.excl) ? a.filter(x => x !== d.excl) : [...a, d.excl]; S.swap = {}; save(); t.setAttribute('aria-pressed', !S.excl.includes(d.excl)); $('#excl-note').innerHTML = exclNote(); return render(); }
+  if (d.triage) return openTriage(+d.s, +d.d, d.triage);
   if (d.lang) { if (d.lang === LANG) return; try { localStorage.setItem('pulsosano.lang', d.lang); } catch (e) { /* sin almacenamiento */ } return location.reload(); }
   if (d.bpat) { S.bpat = d.bpat; save(); $$('button', t.closest('.seg')).forEach(b => b.setAttribute('aria-pressed', b === t)); $('#bpat-note').textContent = BPAT[d.bpat][4]; return; }
   if (d.swap) return openSwap(d.swap);
@@ -1116,6 +1182,7 @@ document.addEventListener('click', e => {
     case 'profile': return openProfile();
     case 'refs': return openRefs();
     case 'calm': return openCalm();
+    case 'calmbreath': S.bpat = '4-4-8'; saveLocal(); return startEx('breath');
     case 'login': return sb?.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }).catch(() => toast('No se pudo abrir el acceso con Google.'));
     case 'logout': clearTimeout(pushT);
       if (GATED && confirmKey !== 'logout') { confirmKey = 'logout'; setTimeout(() => { confirmKey = null; }, 4000); return toast('Pulsa «Salir» otra vez para cerrar la sesión.'); }
@@ -1137,15 +1204,15 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target;
-  if (f.id === 'labform') { const v = id => +$('#' + id).value || null, x = { t: new Date($('#lab-d').value || dkey()).getTime(), tg: v('lab-tg'), ldl: v('lab-ldl'), apob: v('lab-apob') };
-    if (!x.tg && !x.ldl && !x.apob) return toast('Escribe al menos un valor.'); (S.labs ||= []).push(x); save(); toast('Analítica guardada.'); return render(); }
+  if (f.id === 'labform') { const v = id => +$('#' + id).value || null, x = { t: new Date($('#lab-d').value || dkey()).getTime(), tg: v('lab-tg'), ldl: v('lab-ldl'), apob: v('lab-apob'), hdl: v('lab-hdl'), glu: v('lab-glu'), a1c: v('lab-a1c'), lpa: v('lab-lpa'), crp: v('lab-crp') };
+    if (!Object.keys(x).some(k => k !== 't' && x[k])) return toast('Escribe al menos un valor.'); (S.labs ||= []).push(x); save(); toast('Analítica guardada.'); return render(); }
   if (f.id === 'wform') { const kg = +$('#w-kg').value; if (!(kg >= 35 && kg <= 250)) return toast('Revisa el peso.'); if (!S.wlog.length) S.wlog.push({ t: new Date(S.profile.start).getTime(), kg: S.profile.weight }); S.wlog.push({ t: Date.now(), kg }); S.profile.weight = kg; save(); toast('Peso guardado.'); return render(); }
   if (f.id === 'onb' || f.id === 'pform') { const p = readProfile(f); if (!p) return; if (S.profile && p.weight !== S.profile.weight) { if (!S.wlog.length) S.wlog.push({ t: new Date(S.profile.start).getTime(), kg: S.profile.weight }); S.wlog.push({ t: Date.now(), kg: p.weight }); } S.profile = Object.assign({ start: dkey() }, S.profile || {}, p); save(); closeSheet(); render(); if (f.id === 'onb') { toast('Plan creado. Activa los avisos en la campana.'); } return; }
   if (f.id === 'bpform') {
     const s = +$('#bp-s').value, d = +$('#bp-d').value, p = +$('#bp-p').value || null, t = new Date($('#bp-t').value).getTime() || Date.now();
     if (!(s >= 60 && s <= 260 && d >= 30 && d <= 160) || d >= s) return toast('Revisa los valores: la sistólica debe ser mayor que la diastólica.');
     S.bp.push({ t, s, d, p, n: $('#bp-n').value.trim() }); save(); closeSheet(); tab = 'bp'; render();
-    const c = bpClass(s, d); toast(`${s}/${d} · ${c.t}`);
+    const c = bpClass(s, d); if (s >= 160 || d >= 100) openTriage(s, d); else toast(`${s}/${d} · ${c.t}`);
   }
 });
 document.addEventListener('change', e => {

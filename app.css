@@ -356,3 +356,5 @@ button.task { font: inherit; color: inherit; }
 .lsteps.small { font-size: .9rem; color: var(--ink-2); } .lsteps.small b { color: var(--ink); }
 
 .langseg { align-self: flex-start; } .langseg button { padding-inline: 14px; }
+
+.lsteps { font-size: .95rem; } .card > .bpnow { margin: 0; justify-content: center; }
